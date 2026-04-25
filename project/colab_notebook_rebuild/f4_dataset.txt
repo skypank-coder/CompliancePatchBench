@@ -1,0 +1,54 @@
+# Build GRPO dataset directly from real tasks — no project module needed
+import json
+
+# CRITICAL FIX: This system prompt forces JSON-only output.
+# The old prompt was too soft — model generated prose instead of JSON.
+# Every word here is intentional.
+SYSTEM_PROMPT = """You are a security patch agent. Output ONLY valid JSON. No explanations. No markdown. No prose.
+
+You MUST output ONLY valid JSON. No text before or after JSON. First char must be '{', last char must be '}'.
+
+Each response must be exactly one JSON object from this list:
+{"action_type": "read_file", "path": "FILENAME"}
+{"action_type": "write_patch", "file": "FILENAME", "line_start": N, "line_end": N, "new_code": "CODE"}
+{"action_type": "run_ci"}
+{"action_type": "finalize_patch"}
+
+RULES:
+- Output ONLY the JSON object. Nothing before it. Nothing after it.
+- Never delete a line by setting new_code to empty string (penalty: -1.0)
+- new_code must be a valid Python replacement that fixes the violation
+- Start by reading the file, then patch, then run_ci, then finalize_patch"""
+
+
+def build_prompt(task: dict) -> str:
+    files = list(task['codebase'].keys())
+    violations = [
+        {
+            'rule_id': v['rule_id'],
+            'file': v['file'],
+            'line_start': v['line_start'],
+            'line_end': v['line_end'],
+            'severity': v['severity'],
+        }
+        for v in task['violations']
+    ]
+    user_msg = (
+        f"Task ID: {task['task_id']}\n"
+        f"Files available: {files}\n"
+        f"Violations to fix:\n{json.dumps(violations, indent=2)}\n\n"
+        f"Output your first action now. JSON only."
+    )
+    return SYSTEM_PROMPT + "\n\n---\n\n" + user_msg
+
+
+dataset_rows = []
+for task in tasks:
+    dataset_rows.append({
+        'prompt': build_prompt(task),
+        'task_payload': json.dumps(task),
+        'task_id': task['task_id'],
+    })
+
+print(f'Dataset: {len(dataset_rows)} rows')
+print(f'\nSample prompt:\n{dataset_rows[0]["prompt"][:500]}')

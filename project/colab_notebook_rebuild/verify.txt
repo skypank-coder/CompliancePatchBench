@@ -1,0 +1,50 @@
+import os, json, sys
+
+# Verify notebook: syntax + no project.* + no truncated return + no wrong repo
+root = os.environ.get('COMPLIANCEPATCHBENCH_NOTEBOOK', '/content/CompliancePatchBench/project')
+nb_path = os.path.join(root, 'colab_training.ipynb') if not os.path.exists('colab_training.ipynb') else 'colab_training.ipynb'
+if not os.path.exists(nb_path) and len(sys.argv) > 1:
+    nb_path = sys.argv[1]
+if not os.path.exists(nb_path):
+    # Colab: clone default path
+    alt = '/content/CompliancePatchBench/project/colab_training.ipynb'
+    nb_path = alt if os.path.exists(alt) else nb_path
+
+if not os.path.exists(nb_path):
+    print('SKIP verify: colab_training.ipynb not found; run from project/ or set path')
+else:
+    with open(nb_path) as f:
+        nb = json.load(f)
+    errors = []
+    def _scrub(src):
+        s = src
+        if s.startswith('%%capture'):
+            s = s.split('\n', 1)[-1] if '\n' in s else ''
+        out = []
+        for line in s.splitlines(True):
+            if line.lstrip().startswith('!'):
+                out.append('# shell\n')
+            elif line.lstrip().startswith(('%cd', '%pip', '%%')):
+                out.append('# magic\n')
+            else:
+                out.append(line)
+        return ''.join(out)
+    for i, cell in enumerate(nb['cells']):
+        if cell['cell_type'] != 'code': continue
+        src = ''.join(cell['source'])
+        src_clean = _scrub(src)
+        try:
+            compile(src_clean, f'cell_{i+1}', 'exec')
+        except SyntaxError as e:
+            errors.append(f'Cell {i+1}: {e}')
+        if ('from ' + 'project.') in src or ('import ' + 'project.') in src:
+            errors.append(f'Cell {i+1}: still has project.* import')
+        if 'retur\n' in src and 'return' not in src:
+            errors.append(f'Cell {i+1}: truncated return statement')
+        if ('open' + 'env' + '_reg' + 'audit') in src:
+            errors.append(f'Cell {i+1}: still has wrong repo URL')
+    if errors:
+        print('ISSUES FOUND:')
+        for e in errors: print(f'  {e}')
+    else:
+        print('ALL CLEAR - notebook ready to run on Colab')

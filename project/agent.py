@@ -29,24 +29,22 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .hidden_compliance import run_hidden_compliance_checks
-from .utils import extract_json, get_logger
+from .utils import clip_model_json_output, clip_reward_value, extract_json, get_logger
 
 log = get_logger("agent")
 
-# Decoding: short JSON actions, single closing-brace stop; no max_length+max_new_tokens conflict
+# Decoding: pass max_new_tokens (and only that) to model.generate; do not set generation_config
+# to duplicate length — avoids HF warnings. JSON span is taken via clip_model_json_output.
 GENERATION_MAX_NEW_TOKENS = 128
-STOP_TOKENS = ["}"]
+STOP_TOKENS = ["}"]  # used only for legacy health heuristics; prefer clip_model_json_output
 
 
 def align_causal_lm_and_tokenizer(model, tokenizer, max_new_tokens: int = GENERATION_MAX_NEW_TOKENS) -> None:
     """
-    Unify pad/eos on tokenizer and model.config; set generation_config to
-    max_new_tokens only (clear max_length) so TRL/HF do not warn or double-set length.
+    Unify pad/eos on tokenizer and `model.config` only. Length / sampling is passed
+    explicitly to `model.generate(...)`; we do not set `model.generation_config`
+    in parallel to avoid conflicting with per-call kwargs.
     """
-    import copy
-
-    from transformers import GenerationConfig
-
     if getattr(tokenizer, "pad_token", None) is None:
         tokenizer.pad_token = tokenizer.eos_token
     pad_id = tokenizer.pad_token_id
@@ -59,20 +57,7 @@ def align_causal_lm_and_tokenizer(model, tokenizer, max_new_tokens: int = GENERA
     bos_id = getattr(tokenizer, "bos_token_id", None)
     if getattr(model.config, "bos_token_id", None) in (None,) and bos_id is not None:
         model.config.bos_token_id = bos_id
-
-    try:
-        base = getattr(model, "generation_config", None)
-        gen = copy.deepcopy(base) if base is not None else GenerationConfig()
-        if hasattr(gen, "max_length"):
-            gen.max_length = None
-        gen.max_new_tokens = max_new_tokens
-        if pad_id is not None:
-            gen.pad_token_id = pad_id
-        if eos_id is not None:
-            gen.eos_token_id = eos_id
-        model.generation_config = gen
-    except Exception:
-        pass
+    _ = max_new_tokens  # unused; TRL/ callers pass max_new_tokens on generate
 
 
 # ─── Strict system prompt ────────────────────────────────────────────────────
@@ -82,6 +67,8 @@ def align_causal_lm_and_tokenizer(model, tokenizer, max_new_tokens: int = GENERA
 # is repeated and bullet-listed. The model has fewer ways to go wrong.
 
 SYSTEM_PROMPT = """You are CompliancePatchAgent, a code-fix agent operating inside a sandboxed CompliancePatchEnv.
+
+You MUST output ONLY valid JSON. No text before or after JSON. First char must be '{', last char must be '}'.
 
 GOAL
     Fix every violation in the codebase by emitting a sequence of single-action JSON commands.
@@ -362,18 +349,6 @@ def make_hf_pipeline_backend(
     model.eval()
     align_causal_lm_and_tokenizer(model, tokenizer, max_new_tokens=max_new_tokens)
 
-    def _truncate_at_stop_token(text: str) -> str:
-        earliest = None
-        token_len = 0
-        for token in STOP_TOKENS:
-            idx = text.find(token)
-            if idx != -1 and (earliest is None or idx < earliest):
-                earliest = idx
-                token_len = len(token)
-        if earliest is None:
-            return text
-        return text[: earliest + token_len]
-
     def _call(messages: List[Dict[str, str]]) -> str:
         prompt = tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True,
@@ -383,13 +358,13 @@ def make_hf_pipeline_backend(
             out = model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
-                do_sample=temperature > 0.0,
-                temperature=max(temperature, 1e-5),
+                temperature=0.1,
+                do_sample=True,
                 pad_token_id=tokenizer.eos_token_id,
                 eos_token_id=tokenizer.eos_token_id,
             )
         text = tokenizer.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
-        return _truncate_at_stop_token(text)
+        return clip_model_json_output(text)
 
     return _call
 
@@ -627,17 +602,27 @@ class ComplianceAgent:
 
             for step in range(1, self.config.max_steps + 1):
                 state_snapshot = _obs_snapshot(obs, task=task)
-                action, raw, used_fallback, retries, logprob = self._choose_action(messages, obs)
+                action, raw, used_fallback, retries, logprob, extra = self._choose_action(
+                    messages, obs,
+                )
 
                 obs, reward, done, info = env.step(action)
                 next_state_snapshot = _obs_snapshot(obs, task=task)
+                r_adj = float(reward)
+                pf = int(extra.get("parse_failures", 0) or 0)
+                r_adj -= 0.5 * pf
+                if extra.get("unknown_action"):
+                    r_adj -= 0.5
+                if used_fallback:
+                    r_adj -= 1.0
+                r_adj = clip_reward_value(r_adj)
 
                 result.steps.append(StepRecord(
                     step=step,
                     prompt=messages[-1]["content"][:4000],
                     raw_completion=raw[:4000],
                     parsed_action=action,
-                    reward=float(reward),
+                    reward=r_adj,
                     observation=next_state_snapshot,
                     used_fallback=used_fallback,
                     retries=retries,
@@ -646,7 +631,7 @@ class ComplianceAgent:
                     step=step,
                     state=state_snapshot,
                     action=action,
-                    reward=float(reward),
+                    reward=r_adj,
                     next_state=next_state_snapshot,
                     logprob=float(logprob),
                     done=bool(done),
@@ -725,31 +710,49 @@ class ComplianceAgent:
         self,
         messages: List[Dict[str, str]],
         obs: Dict[str, Any],
-    ) -> Tuple[Dict[str, Any], str, bool, int, float]:
+    ) -> Tuple[Dict[str, Any], str, bool, int, float, Dict[str, Any]]:
         """
         Try `max_retries+1` times to get valid JSON. On failure, fall back
-        to the heuristic policy. Returns (action_dict, raw_completion, fallback_used, retries, logprob).
+        to the heuristic policy. Returns
+        (action_dict, raw_completion, fallback_used, retries, logprob, extra).
+
+        `extra` contains parse_failures (count of bad attempts) and unknown_action
+        (saw a dict with an invalid action_type) for per-step reward shaping.
         """
+        allowed = {"read_file", "write_patch", "run_ci", "finalize_patch"}
         ctx = self._capped_context(messages)
         last_raw = ""
+        parse_failures = 0
+        saw_unknown_action_type = False
         for attempt in range(self.config.max_retries + 1):
             try:
                 raw = self.llm(ctx)
             except Exception as e:
                 log.warning("LLM call failed (attempt %d): %s", attempt + 1, e)
                 last_raw = f"<llm_error: {e}>"
+                parse_failures += 1
                 time.sleep(0.5 * (attempt + 1))
                 continue
             last_raw = raw
-            parsed = extract_json(raw)
-            if parsed and isinstance(parsed, dict) and parsed.get("action_type") in {
-                "read_file", "write_patch", "run_ci", "finalize_patch",
-            }:
-                logprob = float(parsed.pop("_logprob", 0.0) or 0.0)
-                parsed = {k: v for k, v in parsed.items() if not str(k).startswith("_")}
-                if self.config.verbose:
-                    log.info("step action: %s", parsed.get("action_type"))
-                return parsed, raw, False, attempt, logprob
+            clipped = clip_model_json_output(raw)
+            parsed = extract_json(clipped) if "{" in raw else None
+            if parsed and isinstance(parsed, dict):
+                at = parsed.get("action_type")
+                if at in allowed:
+                    logprob = float(parsed.pop("_logprob", 0.0) or 0.0)
+                    parsed = {k: v for k, v in parsed.items() if not str(k).startswith("_")}
+                    if self.config.verbose:
+                        log.info("step action: %s", parsed.get("action_type"))
+                    extra = {
+                        "parse_failures": parse_failures,
+                        "unknown_action": saw_unknown_action_type,
+                    }
+                    return parsed, raw, False, attempt, logprob, extra
+                if at is not None:
+                    saw_unknown_action_type = True
+                parse_failures += 1
+            else:
+                parse_failures += 1
             log.info("Invalid JSON / unknown action_type (attempt %d). Re-prompting.", attempt + 1)
             ctx = ctx + [{
                 "role": "user",
@@ -769,8 +772,22 @@ class ComplianceAgent:
                 ci_runs=_ci_runs_seen(messages),
             )
             log.warning("Falling back to heuristic action: %s", action.get("action_type"))
-            return action, last_raw, True, self.config.max_retries, 0.0
-        return {"action_type": "finalize_patch"}, last_raw, True, self.config.max_retries, 0.0
+            return (
+                action,
+                last_raw,
+                True,
+                self.config.max_retries,
+                0.0,
+                {"parse_failures": parse_failures, "unknown_action": saw_unknown_action_type},
+            )
+        return (
+            {"action_type": "finalize_patch"},
+            last_raw,
+            True,
+            self.config.max_retries,
+            0.0,
+            {"parse_failures": parse_failures, "unknown_action": saw_unknown_action_type},
+        )
 
     def _capped_context(self, messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
         """Always keep the system prompt; truncate the rest to the last N msgs."""

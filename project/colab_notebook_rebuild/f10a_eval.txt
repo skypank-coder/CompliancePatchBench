@@ -1,0 +1,56 @@
+from environment.patch_env import CompliancePatchEnv
+from unsloth import FastLanguageModel
+from project.utils import clip_model_json_output
+import torch, json
+
+FastLanguageModel.for_inference(model)
+
+def run_trained_agent(task, max_steps=8):
+    env = CompliancePatchEnv()
+    env.reset(task['task_id'], task['codebase'], task['violations'])
+    prompt = build_prompt(task)
+    messages = [
+        {'role': 'system', 'content': SYSTEM_PROMPT},
+        {'role': 'user', 'content': prompt.split('---\n\n', 1)[-1]},
+    ]
+    for step in range(max_steps):
+        text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        inputs = tokenizer(text, return_tensors='pt').to(model.device)
+        with torch.no_grad():
+            out = model.generate(
+                **inputs,
+                max_new_tokens=128,
+                temperature=0.1,
+                do_sample=True,
+                pad_token_id=tokenizer.eos_token_id,
+                eos_token_id=tokenizer.eos_token_id,
+            )
+        completion = tokenizer.decode(out[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
+        completion = clip_model_json_output(completion)
+        actions = parse_json_actions(completion)
+        action = actions[0] if actions else {'action_type': 'finalize_patch'}
+        obs, r, done, info = env.step(action)
+        messages.append({'role': 'assistant', 'content': completion})
+        messages.append({'role': 'user', 'content': f'Result: {obs["action_result"][:150]}'})
+        if done or action.get('action_type') == 'finalize_patch':
+            return info.get('final_score', r)
+    _, r, _, info = env.step({'action_type': 'finalize_patch'})
+    return info.get('final_score', r)
+
+print('=== Before vs After Training ===')
+print(f'{"Task":<32} {"Before":>8} {"After":>8} {"Delta":>8}')
+print('-' * 60)
+
+after_scores = {}
+for task in tasks:
+    before = baseline_scores.get(task['task_id'], 0.0)
+    after  = run_trained_agent(task)
+    after_scores[task['task_id']] = after
+    arrow = '↑' if after > before else ('↓' if after < before else '=')
+    print(f'{task["task_id"]:<32} {before:>8.4f} {after:>8.4f} {arrow}{abs(after-before):>7.4f}')
+
+avg_before = sum(baseline_scores.values()) / len(baseline_scores)
+avg_after  = sum(after_scores.values()) / len(after_scores)
+print('-' * 60)
+print(f'{"AVERAGE":<32} {avg_before:>8.4f} {avg_after:>8.4f} {avg_after-avg_before:>+8.4f}')
+print(f'\nImprovement: {(avg_after-avg_before):+.4f}')

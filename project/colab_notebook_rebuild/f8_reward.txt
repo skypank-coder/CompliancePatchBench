@@ -1,0 +1,120 @@
+import json
+from typing import Any, Dict, List
+from environment.patch_env import CompliancePatchEnv
+from project.utils import clip_model_json_output, clip_reward_value
+
+ALLOWED_ACTIONS = {'read_file', 'write_patch', 'run_ci', 'finalize_patch'}
+
+def parse_json_actions(completion: str) -> List[Dict[str, Any]]:
+    """
+    Extract valid JSON action objects using raw_decode after JSON span clip.
+    """
+    completion = clip_model_json_output(str(completion))
+    decoder = json.JSONDecoder()
+    actions = []
+    idx = 0
+    while idx < len(completion):
+        start = completion.find('{', idx)
+        if start == -1:
+            break
+        try:
+            obj, end_offset = decoder.raw_decode(completion[start:])
+        except json.JSONDecodeError:
+            idx = start + 1
+            continue
+        idx = start + end_offset
+        if isinstance(obj, dict) and obj.get('action_type') in ALLOWED_ACTIONS:
+            actions.append(obj)
+    return actions
+
+def compliance_patch_reward(completions, prompts=None, task_payload=None, **kwargs):
+    """
+    GRPO reward function.
+    - Executes each completion in real CompliancePatchEnv
+    - task_payload is a dataset column passed by TRL as a kwarg
+    - Returns list of floats, one per completion
+    """
+    if task_payload is None:
+        task_payload = kwargs.get('task_payload', ['{}'] * len(completions))
+
+    rewards = []
+    for completion, payload in zip(completions, task_payload):
+        try:
+            task = json.loads(payload) if isinstance(payload, str) else payload
+        except Exception:
+            rewards.append(-1.0)
+            continue
+
+        try:
+            env = CompliancePatchEnv()
+            env.reset(
+                task_id=task.get('task_id', 'unknown'),
+                codebase=task.get('codebase', {}),
+                violations=task.get('violations', []),
+                max_steps=8,
+                file_reads_remaining=task.get('file_reads_remaining', 5),
+            )
+
+            final_score = -1.0
+            finalized = False
+            actions = parse_json_actions(completion)
+
+            for action in actions[:8]:
+                obs, reward, done, info = env.step(action)
+                if action.get('action_type') == 'finalize_patch' or done:
+                    final_score = float(info.get('final_score', reward))
+                    finalized = True
+                    break
+
+            if not finalized:
+                _, reward, _, info = env.step({'action_type': 'finalize_patch'})
+                final_score = float(info.get('final_score', reward))
+
+        except Exception:
+            final_score = -1.0
+
+        rewards.append(clip_reward_value(final_score))
+
+    avg = sum(rewards) / len(rewards) if rewards else 0.0
+    successes = sum(1 for r in rewards if r > 1.0)
+    print(f'  Batch avg={avg:+.4f} | success={successes}/{len(rewards)} | {[round(r,2) for r in rewards]}')
+    return rewards
+
+
+# ── Verify reward function works before training ───────────────────────────────
+from environment.tasks.task1_single_file import get_task as _gt1
+
+_t1 = _gt1()
+_task_payload = json.dumps({
+    'task_id': 'task1_single_file',
+    'codebase': _t1['codebase'],
+    'violations': _t1['ground_truth'],
+    'file_reads_remaining': 5,
+})
+
+# Good patch
+_good = (
+    json.dumps({'action_type': 'write_patch', 'file': 'routes.py',
+                'line_start': 74, 'line_end': 74,
+                'new_code': "    app.logger.info('User id=%s', str(user.id))"})
+    + '\n' + json.dumps({'action_type': 'finalize_patch'})
+)
+# Deletion cheat
+_del = (
+    json.dumps({'action_type': 'write_patch', 'file': 'routes.py',
+                'line_start': 74, 'line_end': 74, 'new_code': ''})
+    + '\n' + json.dumps({'action_type': 'finalize_patch'})
+)
+# Blank (model produced no JSON — simulates the log error)
+_blank = 'I will fix this by removing the logging statement from the function.'
+
+r_good  = compliance_patch_reward([_good],  task_payload=[_task_payload])[0]
+r_del   = compliance_patch_reward([_del],   task_payload=[_task_payload])[0]
+r_blank = compliance_patch_reward([_blank], task_payload=[_task_payload])[0]
+
+print(f'\nGood patch:     {r_good:+.4f}  (expect > 0)')
+print(f'Deletion cheat: {r_del:+.4f}  (expect <= -1.0)')
+print(f'No JSON output: {r_blank:+.4f} (expect -1.0, simulates log error)')
+
+assert r_del <= -1.0, f'Anti-cheat broken: deletion got {r_del}'
+print('\nReward function verified')

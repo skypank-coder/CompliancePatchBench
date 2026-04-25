@@ -1,0 +1,17 @@
+# Show anti-cheat catching a fake-safe patch
+from environment.patch_env import CISandbox
+
+ci = CISandbox()
+
+hashed_pii = "    logger.info(f'login: {hashlib.sha256(user.email.encode()).hexdigest()}')"
+real_fix   = "    logger.info('User logged in id=%s', str(user.id))"
+
+r_fake, reason_fake = ci.check_violation_fixed(
+    f"import hashlib\ndef login(user):\n{hashed_pii}", 'GDPR-ART5-1A', 3, 3)
+r_real, reason_real = ci.check_violation_fixed(
+    f"def login(user):\n{real_fix}", 'GDPR-ART5-1A', 2, 2)
+
+print('Hashed PII patch — fixed:', r_fake, '|', reason_fake[:60])
+print('Real fix         — fixed:', r_real, '|', reason_real[:60])
+print()
+print('Anti-cheat status:', 'WORKING' if not r_fake else 'BROKEN - hashed PII passes')

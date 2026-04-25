@@ -24,6 +24,7 @@ if str(_ROOT) not in sys.path:
 
 from environment.patch_env import CompliancePatchEnv
 from project.agent import GENERATION_MAX_NEW_TOKENS, align_causal_lm_and_tokenizer
+from project.utils import clip_model_json_output
 from environment.tasks.task1_single_file import get_task as get_task1
 from environment.tasks.task2_django_app import get_task as get_task2
 
@@ -41,6 +42,8 @@ TASK_CACHE = {
 
 SYSTEM_PROMPT = """You are a security compliance engineer. You receive a Python codebase with known GDPR/OWASP violations.
 Your job: write a minimal patch that fixes each violation without breaking existing code.
+
+You MUST output ONLY valid JSON. No text before or after JSON. First char must be '{', last char must be '}'.
 
 You interact via JSON actions:
 {"action_type": "read_file", "path": "filename.py"}
@@ -61,11 +64,6 @@ def call_env(endpoint: str, payload: dict) -> dict:
     r = requests.post(f"{ENV_BASE_URL}/{endpoint}", json=payload, timeout=30)
     r.raise_for_status()
     return r.json()
-
-
-def _truncate_at_stop_token(text: str, stop: str = "}") -> str:
-    k = text.find(stop)
-    return text[: k + 1] if k != -1 else text
 
 
 def rollout(model, tokenizer, task_id: str) -> dict:
@@ -96,15 +94,15 @@ def rollout(model, tokenizer, task_id: str) -> dict:
         with torch.no_grad():
             outputs = model.generate(
                 **inputs,
-                max_new_tokens=GENERATION_MAX_NEW_TOKENS,
-                temperature=0.7,
+                max_new_tokens=128,
+                temperature=0.1,
                 do_sample=True,
                 pad_token_id=tokenizer.eos_token_id,
                 eos_token_id=tokenizer.eos_token_id,
             )
 
         raw = tokenizer.decode(outputs[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
-        completion = _truncate_at_stop_token(raw)
+        completion = clip_model_json_output(raw)
         all_completions.append(completion)
 
         # Parse action

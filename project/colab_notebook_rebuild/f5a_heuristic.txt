@@ -1,0 +1,38 @@
+# Baseline: heuristic agent applies known-good patches
+from environment.patch_env import CompliancePatchEnv
+
+KNOWN_PATCHES = {
+    'GDPR-ART5-1A': "    app.logger.info('User logged in id=%s', str(user.id))\n",
+    'GDPR-ART5-1C': "    return jsonify({'id': user.id, 'username': str(user.id)})\n",
+    'GDPR-ART25':   "    # rate limiting enforced by middleware\n",
+    'GDPR-ART30':   "    # audit log: action recorded via middleware\n",
+    'GDPR-ART32':   "    DEBUG = os.environ.get('DEBUG', 'false').lower() == 'true'\n",
+    'OWASP-A01':    "    user = User.objects.filter(id=user_id, tenant=request.tenant).first()\n",
+    'OWASP-A02':    "    SECRET_KEY = os.environ.get('SECRET_KEY')\n",
+    'OWASP-A03':    "    results = Model.objects.filter(amount=amount, currency=currency)\n",
+    'OWASP-A04':    "    # XML parsing disabled — use JSON API instead\n",
+    'SOC2-CC6.1':   "    # logging enabled at INFO level\n",
+}
+
+def heuristic_score(task):
+    env = CompliancePatchEnv()
+    env.reset(task['task_id'], task['codebase'], task['violations'])
+    for v in task['violations']:
+        patch = KNOWN_PATCHES.get(v['rule_id'], f"    pass  # fixed {v['rule_id']}\n")
+        env.step({'action_type': 'write_patch', 'file': v['file'],
+                  'line_start': v['line_start'], 'line_end': v['line_end'],
+                  'new_code': patch})
+    _, score, _, info = env.step({'action_type': 'finalize_patch'})
+    return info.get('final_score', score), info.get('critique', {})
+
+print('=== Baseline Scores ===')
+baseline_scores = {}
+for task in tasks:
+    score, critique = heuristic_score(task)
+    baseline_scores[task['task_id']] = score
+    fixed = critique.get('violations_fixed', '?')
+    total = critique.get('violations_total', '?')
+    print(f'  {task["task_id"]}: {score:.4f} ({fixed}/{total} fixed)')
+
+avg_baseline = sum(baseline_scores.values()) / len(baseline_scores)
+print(f'\n  Average baseline: {avg_baseline:.4f}')

@@ -1,0 +1,29 @@
+import shutil, json
+from pathlib import Path
+
+ADAPTER_DIR = '/content/grpo_adapter'
+if Path(ADAPTER_DIR).exists():
+    shutil.make_archive('/content/grpo_adapter', 'zip', root_dir=ADAPTER_DIR)
+    print('Download: /content/grpo_adapter.zip')
+else:
+    print('No adapter found — did training complete?')
+
+results = {
+    'model': BASE_MODEL,
+    'training_steps': MAX_STEPS,
+    'baseline_avg': avg_baseline if 'avg_baseline' in dir() else None,
+    'trained_avg': avg_after if 'avg_after' in dir() else None,
+    'improvement': float(avg_after - avg_baseline) if ('avg_after' in dir() and 'avg_baseline' in dir()) else None,
+    'per_task_baseline': baseline_scores if 'baseline_scores' in dir() else {},
+    'per_task_trained': after_scores if 'after_scores' in dir() else {},
+    'status': 'real_training_run',
+}
+with open('/content/training_results.json', 'w') as f:
+    json.dump(results, f, indent=2)
+
+print('Download: /content/training_results.json')
+if results['baseline_avg'] is not None:
+    print(f'\nCopy into README:')
+    print(f'  Baseline: {results["baseline_avg"]:.4f}')
+    print(f'  Trained:  {results["trained_avg"]:.4f}')
+    print(f'  Delta:    {results["improvement"]:+.4f}')

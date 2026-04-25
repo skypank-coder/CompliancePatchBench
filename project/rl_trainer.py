@@ -52,7 +52,6 @@ from environment.patch_env import CompliancePatchEnv  # noqa: E402
 
 from .agent import (
     GENERATION_MAX_NEW_TOKENS,
-    STOP_TOKENS,
     AgentConfig,
     RULE_PATCHES,
     RULE_PATCHES_CHEAT,
@@ -72,13 +71,15 @@ from .utils import (  # noqa: E402
     LEARNING_CURVE_PATH,
     TASKS_PATH,
     TRAJECTORIES_RL_PATH,
+    clip_model_json_output,
+    clip_reward_value,
+    extract_json,
     get_logger,
     read_json,
     read_jsonl,
     seed_everything,
     write_json,
     write_jsonl,
-    extract_json,
 )
 
 log = get_logger("rl_trainer")
@@ -90,7 +91,7 @@ DEFAULT_SFT_ADAPTER_DIR = DATA_DIR / "lora_adapter"
 
 def _clip_reward(value: float) -> float:
     """Keep GRPO rewards bounded so outliers do not dominate updates."""
-    return max(min(float(value), 1.5), -1.0)
+    return clip_reward_value(value)
 
 
 def _split_tasks(tasks: List[Dict[str, Any]], seed: int, train_fraction: float = 0.75) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
@@ -156,7 +157,7 @@ class RLConfig:
     base_model: str = DEFAULT_RL_BASE_MODEL
     sft_adapter_dir: str = str(DEFAULT_SFT_ADAPTER_DIR)
     output_dir: str = str(RL_ADAPTER_DIR)
-    iterations: int = 45
+    iterations: int = 40
     rollouts_per_task: int = 1
     epochs_per_iteration: int = 1
     batch_size: int = 2
@@ -171,7 +172,7 @@ class RLConfig:
     use_tabular_rl: bool = False
     tabular_alpha: float = 0.45
     tabular_epsilon: float = 0.20
-    exploration_temperature: float = 0.30
+    exploration_temperature: float = 0.1
 
 
 class TabularPatchPolicy:
@@ -372,7 +373,8 @@ ALLOWED_ACTIONS = {"read_file", "write_patch", "run_ci", "finalize_patch"}
 
 
 def _json_actions_from_completion(completion: str) -> List[Dict[str, Any]]:
-    """Extract JSON action objects from a model completion."""
+    """Extract JSON action objects from a model completion (after JSON span clip)."""
+    completion = clip_model_json_output(str(completion))
     decoder = json.JSONDecoder()
     actions: List[Dict[str, Any]] = []
     idx = 0
@@ -391,18 +393,22 @@ def _json_actions_from_completion(completion: str) -> List[Dict[str, Any]]:
     return actions
 
 
-def _truncate_at_stop_token(text: str, stop_tokens: List[str] = STOP_TOKENS) -> str:
-    """Mirror stop-token behavior for backends that do not support it natively."""
-    earliest: Optional[int] = None
-    token_len = 0
-    for token in stop_tokens:
-        idx = text.find(token)
-        if idx != -1 and (earliest is None or idx < earliest):
-            earliest = idx
-            token_len = len(token)
-    if earliest is None:
-        return text
-    return text[: earliest + token_len]
+def _rollout_format_metrics(rollouts: List[Any]) -> Dict[str, float]:
+    """First-parse JSON rate and fallback share across rollout step records."""
+    n_steps = 0
+    n_ok = 0
+    n_fb = 0
+    for result in rollouts:
+        for step in getattr(result, "steps", []):
+            n_steps += 1
+            if not getattr(step, "used_fallback", True):
+                n_ok += 1
+            if getattr(step, "used_fallback", False):
+                n_fb += 1
+    return {
+        "valid_json_rate": n_ok / max(1, n_steps),
+        "fallback_rate": n_fb / max(1, n_steps),
+    }
 
 
 def _task_to_grpo_prompt(task: Dict[str, Any]) -> str:
@@ -429,21 +435,25 @@ def _grpo_reward_factory(component_log: List[Dict[str, float]], health_log: List
         payloads = task_payload or kwargs.get("task", [])
         rewards: List[float] = []
         for completion, payload in zip(completions, payloads):
-            completion = _truncate_at_stop_token(str(completion))
+            raw_s = str(completion)
+            clipped = clip_model_json_output(raw_s)
+            cr = len(clipped) / max(1, len(raw_s))
             health_log.append({
-                "length": float(len(completion)),
-                "terminated": 1.0 if completion.rstrip().endswith(tuple(STOP_TOKENS)) else 0.0,
+                "length": float(len(clipped)),
+                "raw_length": float(len(raw_s)),
+                "clipped_ratio": cr,
+                "terminated": 1.0 if clipped.rstrip().endswith("}") else 0.0,
             })
             task = json.loads(payload) if isinstance(payload, str) else payload
-            actions = _json_actions_from_completion(completion)
+            actions = _json_actions_from_completion(clipped)
             if not actions:
                 component_log.append({
                     "reward_ci": 0.0,
                     "reward_minimal": 0.0,
                     "reward_regression": 0.0,
-                    "reward_penalty": -0.3,
+                    "reward_penalty": -0.5,
                 })
-                rewards.append(-0.3)
+                rewards.append(_clip_reward(-0.5))
                 continue
 
             env = CompliancePatchEnv()
@@ -520,7 +530,8 @@ def _rollout_generation_health(rollouts: List[Any]) -> Dict[str, float]:
             if not raw:
                 continue
             lengths.append(len(raw))
-            if raw.rstrip().endswith(tuple(STOP_TOKENS)):
+            c = clip_model_json_output(raw)
+            if c.rstrip().endswith("}"):
                 terminated += 1
     if not lengths:
         return {"mean_length": 0.0, "terminated_length": 0.0}
@@ -604,13 +615,13 @@ def _current_policy_backend(cfg: RLConfig, model_path: Optional[str], temperatur
                     out = model.generate(
                         **inputs,
                         max_new_tokens=GENERATION_MAX_NEW_TOKENS,
-                        do_sample=temperature > 0.0,
-                        temperature=max(temperature, 1e-5),
+                        temperature=0.1,
+                        do_sample=True,
                         pad_token_id=tokenizer.eos_token_id,
                         eos_token_id=tokenizer.eos_token_id,
                     )
                 text = tokenizer.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
-                return _truncate_at_stop_token(text)
+                return clip_model_json_output(text)
 
             return _call
         except Exception as e:
@@ -762,9 +773,6 @@ def policy_gradient_update(
         "max_completion_length": GENERATION_MAX_NEW_TOKENS,
         "num_generations": 4,
         "temperature": cfg.exploration_temperature,
-        # `stop_strings` is not in all TRL/Unsloth GRPOConfig builds; stop at `}` in reward/parse instead.
-        # TRL merges this after max_completion_length; overrides model default (often 768 on Qwen).
-        "generation_kwargs": {"max_new_tokens": GENERATION_MAX_NEW_TOKENS},
     })
     args = GRPOConfig(**grpo_kwargs)
     trainer = GRPOTrainer(
@@ -872,6 +880,7 @@ def train_rl(config: Optional[RLConfig] = None) -> Dict[str, Any]:
         # user requested: project/data/trajectories_rl.jsonl.
         write_jsonl(Path(cfg.trajectories_path), list(read_jsonl(iter_traj_path)))
         generation_health = _rollout_generation_health(rollouts)
+        fmt_metrics = _rollout_format_metrics(rollouts)
 
         # Evaluate current policy and write learning-curve point.
         train_report = evaluate(train_tasks, llm=eval_llm, config=AgentConfig(max_steps=cfg.max_steps), print_per_task=False)
@@ -889,6 +898,8 @@ def train_rl(config: Optional[RLConfig] = None) -> Dict[str, Any]:
             "iteration": iteration,
             "avg_reward": train_summary.get("avg_score", 0.0),
             "success_rate": train_summary.get("overall_success_rate", 0.0),
+            "valid_json_rate": fmt_metrics.get("valid_json_rate", 0.0),
+            "fallback_rate": fmt_metrics.get("fallback_rate", 0.0),
             "train_success_rate": train_summary.get("overall_success_rate", 0.0),
             "test_success_rate": test_summary.get("overall_success_rate", 0.0),
             "hidden_violation_rate": train_summary.get("hidden_violation_rate", 0.0),
@@ -924,6 +935,8 @@ def train_rl(config: Optional[RLConfig] = None) -> Dict[str, Any]:
         print(
             f"iter={iteration} avg_reward={point['avg_reward']:.3f} "
             f"success_rate={point['success_rate']:.2%} "
+            f"valid_json={point['valid_json_rate']:.2%} "
+            f"fallback={point['fallback_rate']:.2%} "
             f"hidden_violation_rate={point['hidden_violation_rate']:.2%} "
             f"mean_length={point['mean_length']:.1f} "
             f"terminated_length={point['terminated_length']:.1f}"
@@ -974,7 +987,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--base-model", default=DEFAULT_RL_BASE_MODEL)
     p.add_argument("--sft-adapter-dir", default=str(DEFAULT_SFT_ADAPTER_DIR))
     p.add_argument("--output-dir", default=str(RL_ADAPTER_DIR))
-    p.add_argument("--iterations", type=int, default=45)
+    p.add_argument("--iterations", type=int, default=40)
     p.add_argument("--rollouts-per-task", type=int, default=1)
     p.add_argument("--epochs-per-iteration", type=int, default=1)
     p.add_argument("--batch-size", type=int, default=2)
@@ -988,8 +1001,8 @@ def _parse_args() -> argparse.Namespace:
                    help="Use the tabular controller only for CPU dry-run/baseline rollouts; final training uses TRL GRPO.")
     p.add_argument("--tabular-alpha", type=float, default=0.45)
     p.add_argument("--tabular-epsilon", type=float, default=0.20)
-    p.add_argument("--exploration-temperature", type=float, default=0.30,
-                   help="Neural policy sampling temperature during RL rollout; evaluation remains temperature=0.")
+    p.add_argument("--exploration-temperature", type=float, default=0.1,
+                   help="Neural policy sampling temperature for GRPO / rollout (default 0.1).")
     return p.parse_args()
 
 

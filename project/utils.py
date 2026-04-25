@@ -73,6 +73,32 @@ _JSON_BLOCK_RE = re.compile(r"\{[\s\S]*\}")
 _FENCE_RE = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```", re.IGNORECASE)
 
 
+def clip_model_json_output(text: str) -> str:
+    """
+    Keep a single JSON object span: from first '{' to last '}', then trim at last '}'.
+    Use before json.loads / extract_json so multi-line "new_code" is not cut mid-brace
+    (avoid STOP_TOKENS on '}' that break valid JSON).
+    """
+    if not text:
+        return ""
+    t = str(text)
+    i = t.find("{")
+    if i < 0:
+        return t.strip()
+    j = t.rfind("}")
+    if j < i:
+        return t[i:].strip()
+    out = t[i : j + 1]
+    if "}" in out:
+        out = out[: out.rfind("}") + 1]
+    return out.strip()
+
+
+def clip_reward_value(value: float) -> float:
+    """Bound RL step / GRPO rewards to [-1.0, 1.5]."""
+    return max(min(float(value), 1.5), -1.0)
+
+
 def extract_json(text: str) -> Optional[Dict[str, Any]]:
     """
     Robustly extract the first JSON object from a possibly-noisy string.
@@ -87,7 +113,7 @@ def extract_json(text: str) -> Optional[Dict[str, Any]]:
     """
     if not text:
         return None
-    text = text.strip()
+    text = clip_model_json_output(text)
 
     try:
         return json.loads(text)

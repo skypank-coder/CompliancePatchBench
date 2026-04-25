@@ -6,7 +6,7 @@ colorTo: purple
 sdk: docker
 pinned: false
 license: mit
-short_description: RL environment for training patch agents on compliance with GRPO and hidden oracles
+short_description: RL compliance patching with GRPO and hidden-oracle rewards
 ---
 
 # CompliancePatchBench

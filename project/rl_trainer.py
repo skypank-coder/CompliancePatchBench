@@ -762,7 +762,9 @@ def policy_gradient_update(
         "max_completion_length": GENERATION_MAX_NEW_TOKENS,
         "num_generations": 4,
         "temperature": cfg.exploration_temperature,
-        "stop_strings": STOP_TOKENS,
+        # `stop_strings` is not in all TRL/Unsloth GRPOConfig builds; stop at `}` in reward/parse instead.
+        # TRL merges this after max_completion_length; overrides model default (often 768 on Qwen).
+        "generation_kwargs": {"max_new_tokens": GENERATION_MAX_NEW_TOKENS},
     })
     args = GRPOConfig(**grpo_kwargs)
     trainer = GRPOTrainer(

@@ -27,7 +27,7 @@ by hidden constraints.
 - Diverse generated tasks across GDPR, OWASP, code quality, multi-file bugs,
   and adversarial fake-safe fixes.
 - Hidden compliance checks that catch shortcut fixes which pass visible tests.
-- A self-learning pipeline: heuristic rollouts -> SFT -> RL fine-tuning.
+- RL-based policy optimization using GRPO via TRL.
 - RL trajectories with `(state, action, reward, next_state, logprob, done)`.
 - Learning curves tracking reward, success rate, and hidden-violation rate.
 
@@ -47,17 +47,15 @@ In short: the agent learns from mistakes and gradually avoids bad fixes. The
 agent does not just learn to fix code; it learns to avoid cheating because the
 environment penalizes hidden violations.
 
-## RL + Self-Learning
+## RL + Policy Optimization
 
-We use tabular RL as a lightweight policy improvement mechanism for discrete
-patch decisions, and neural policy-gradient RL (LoRA) for scaling. Tabular RL is
-used because the action space is discrete and interpretable, making it suitable
-for patch decision learning.
+We use heuristic/tabular rollouts for initial data collection and baseline
+comparison. Final policy optimization is performed using GRPO via TRL.
 
-Credit assignment uses reward-to-go, so later CI and hidden-oracle outcomes are
-propagated backward across earlier actions. During RL training, neural rollouts
-use stochastic exploration (`temperature=0.3` by default); evaluation remains
-deterministic (`temperature=0.0`).
+This is an online reinforcement learning loop with environment feedback:
+the current policy generates JSON patch actions, `CompliancePatchEnv` executes
+them and returns reward, and `GRPOTrainer` updates that same policy for the next
+iteration. Evaluation remains deterministic.
 
 The RL loop is designed to scale to larger task distributions; this demo uses a
 small subset for runtime constraints.
@@ -71,7 +69,7 @@ so "high confidence but wrong" patches are visible instead of hidden.
 Pipeline:
 
 ```text
-heuristic rollouts -> SFT dataset -> LoRA SFT policy -> RL interaction -> RL-refined policy
+heuristic rollouts -> SFT initialization -> online GRPO rollouts -> GRPO-refined policy
 ```
 
 ## OpenEnv Hackathon Checklist
@@ -87,9 +85,8 @@ heuristic rollouts -> SFT dataset -> LoRA SFT policy -> RL interaction -> RL-ref
   consistently solved tasks are sampled less.
 - Generalization: the RL loop trains on a train split and reports
   `test_success_rate` on unseen tasks.
-- Training stack: SFT uses Unsloth/LoRA where available, and RL uses
-  reward-to-go policy optimization with a transparent tabular controller plus a
-  neural LoRA path for scaling.
+- Training stack: SFT uses Unsloth/LoRA where available, and final policy
+  optimization uses TRL `GRPOTrainer` with environment reward feedback.
 - Demo evidence: `project.smoke_test`, difficulty-aware evaluation, failure-case
   logging, and `/rl/learning-curve` show the baseline, rewards, safeguards, and
   improvement path.
@@ -149,7 +146,15 @@ Iter 0 -> reward ...
 Iter 1 -> reward ...
 ```
 
-For the full GPU demo, open `project/colab_training.ipynb`.
+## Training Notebook
+
+Mandatory training-run notebook for reviewers:
+[`project/colab_training.ipynb`](project/colab_training.ipynb)
+
+This notebook is the runnable Hugging Face GPU training path. It logs in with
+`HF_TOKEN`, verifies the real `CompliancePatchEnv` reward, runs the baseline,
+trains `unsloth/Qwen2.5-3B-Instruct` with TRL `GRPOTrainer`, and optionally
+pushes the adapter to `HF_OUTPUT_REPO`.
 
 ## Docker / Hugging Face Space
 

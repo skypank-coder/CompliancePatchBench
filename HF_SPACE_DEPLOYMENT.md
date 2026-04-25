@@ -6,7 +6,7 @@ This repo is ready to deploy as a Docker-based Hugging Face Space.
 
 - SDK: Docker
 - Port: `${PORT:-7860}`
-- Entrypoint: `python -m uvicorn api.server:app --host 0.0.0.0 --port ${PORT:-7860}`
+- Entrypoint: `uvicorn app:app --host 0.0.0.0 --port 7860`
 - Health check: `GET /health`
 
 ## Files Required In The Docker Image
@@ -50,11 +50,40 @@ Expected response:
 The training notebooks and RL demo remain available in the repository for
 judging, but they are not copied into the Docker image.
 
+## Hugging Face CLI Troubleshooting
+
+If `hf download ... --repo-type=space` fails with:
+
+```text
+TypeError: Typer.__init__() got an unexpected keyword argument 'suggest_commands'
+```
+
+your local Hugging Face CLI has a dependency mismatch. Upgrade the CLI stack:
+
+```bash
+python3 -m pip install --user --upgrade huggingface_hub "typer>=0.24.2" "click>=8.2.1"
+hash -r
+hf --version
+```
+
+Then retry:
+
+```bash
+hf download Skypank/compliance-patch-bench --repo-type=space --local-dir ./hf-space-download
+```
+
+Alternative download path:
+
+```bash
+git lfs install
+git clone https://huggingface.co/spaces/Skypank/compliance-patch-bench
+```
+
 ## Reviewer Endpoints
 
 - `/project` explains the RL formulation, anti-cheat reward, and latest learning-curve point.
 - `/rl/learning-curve` exposes reward, success, and hidden-violation history by iteration.
-- `/benchmark` exposes task difficulty and confirms hidden constraints / self-learning support.
+- `/benchmark` exposes task difficulty and confirms hidden constraints / GRPO policy optimization support.
 
 Before pushing, run:
 

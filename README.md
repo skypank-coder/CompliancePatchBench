@@ -157,9 +157,23 @@ This notebook is the runnable Hugging Face GPU training path. It logs in with
 trains `unsloth/Qwen2.5-3B-Instruct` with TRL `GRPOTrainer`, and optionally
 pushes the adapter to `HF_OUTPUT_REPO`.
 
-## Docker / Hugging Face Space
+## Docker / Hugging Face Spaces
 
-**Live Space:** [huggingface.co/spaces/rachana05/Compliance-patch-bench](https://huggingface.co/spaces/rachana05/Compliance-patch-bench)
+- **API (FastAPI, backend):** [huggingface.co/spaces/rachana05/Compliance-patch-bench](https://huggingface.co/spaces/rachana05/Compliance-patch-bench)
+- **Streamlit UI (frontend):** [huggingface.co/spaces/rachana05/CompliancePatchBench-UI](https://huggingface.co/spaces/rachana05/CompliancePatchBench-UI)
+
+### `ENV_BASE_URL` (connect UI to the API)
+
+The Streamlit app calls the FastAPI server with **server-side** HTTP (`requests`), so the UI container must know the **public base URL of the running API Space**, not `localhost`. When **demoing** the hosted UI, set this on the **Streamlit** Space only:
+
+| Variable | Set on | Value |
+|----------|--------|--------|
+| `ENV_BASE_URL` | [CompliancePatchBench-UI](https://huggingface.co/spaces/rachana05/CompliancePatchBench-UI) **→ Settings → Variables and secrets** | The deployed API’s base URL, e.g. `https://rachana05-compliance-patch-bench.hf.space` (use the `*.hf.space` host shown when the API Space is open; no path suffix) |
+
+- **Not** `http://localhost:7860` in production: inside the UI container, that points at the Streamlit process, not the separate API Space, so the frontend will not reach the backend and the app will show “Using demo data.”
+- After changing it, **restart** the UI Space. Verify: open `ENV_BASE_URL/health` in a browser — you should see `{"status":"ok",...}`.
+
+Local development only: with API and UI both on your machine, you can use `http://host.docker.internal:7860` (Docker) or `http://127.0.0.1:7860` (native runs); see `HF_SPACE_DEPLOYMENT.md`.
 
 ```bash
 docker build -t compliancepatchbench .

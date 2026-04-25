@@ -14,14 +14,21 @@ import requests
 import streamlit as st
 
 # --- Global setup -----------------------------------------------------------------
+# Backend (FastAPI) base URL. On Hugging Face: set env ENV_BASE_URL to the
+# *deployed* API Space public URL (https://<…>.hf.space), not localhost — the UI
+# container's localhost is this Streamlit app, not the separate API Space.
 ENV_BASE_URL = os.environ.get("ENV_BASE_URL", "http://localhost:7860")
 GITHUB_URL = os.environ.get(
     "CPB_GITHUB_URL",
     "https://github.com/skypank-coder/CompliancePatchBench",
 )
-HF_SPACE_URL = os.environ.get(
+HF_API_SPACE_URL = os.environ.get(
     "CPB_HF_SPACE_URL",
     "https://huggingface.co/spaces/rachana05/Compliance-patch-bench",
+)
+HF_UI_SPACE_URL = os.environ.get(
+    "CPB_HF_UI_SPACE_URL",
+    "https://huggingface.co/spaces/rachana05/CompliancePatchBench-UI",
 )
 
 DEMO_REWARDS = [
@@ -194,7 +201,8 @@ with st.sidebar:
         st.warning("🟡 Using demo data (backend not reachable)")
 
     st.link_button("GitHub repo", GITHUB_URL, use_container_width=True)
-    st.link_button("Hugging Face Space", HF_SPACE_URL, use_container_width=True)
+    st.link_button("Hugging Face — API (FastAPI)", HF_API_SPACE_URL, use_container_width=True)
+    st.link_button("Hugging Face — Streamlit UI", HF_UI_SPACE_URL, use_container_width=True)
 
 # ---- Session defaults ------------------------------------------------------------
 if "using_demo" not in st.session_state:
@@ -348,5 +356,5 @@ with tab_bench:
 # ---- Footer ----------------------------------------------------------------------
 st.divider()
 st.caption(
-    f"[GitHub]({GITHUB_URL}) · [Hugging Face]({HF_SPACE_URL}) · Meta OpenEnv Hackathon 2026"
+    f"[GitHub]({GITHUB_URL}) · [HF API Space]({HF_API_SPACE_URL}) · [HF UI Space]({HF_UI_SPACE_URL}) · Meta OpenEnv Hackathon 2026"
 )

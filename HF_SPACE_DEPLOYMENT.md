@@ -1,7 +1,25 @@
 # Hugging Face Space Deployment
 
-**Canonical Space:** [rachana05/Compliance-patch-bench](https://huggingface.co/spaces/rachana05/Compliance-patch-bench)  
-(`https://huggingface.co/spaces/rachana05/Compliance-patch-bench`)
+| Role | URL |
+|------|-----|
+| **API (FastAPI / Docker app)** | [huggingface.co/spaces/rachana05/Compliance-patch-bench](https://huggingface.co/spaces/rachana05/Compliance-patch-bench) |
+| **Streamlit UI (Docker app)** | [huggingface.co/spaces/rachana05/CompliancePatchBench-UI](https://huggingface.co/spaces/rachana05/CompliancePatchBench-UI) |
+
+**Canonical API Space (this monorepo’s Docker app):** `https://huggingface.co/spaces/rachana05/Compliance-patch-bench`
+
+## `ENV_BASE_URL` (frontend → backend, required for a live demo)
+
+The **Streamlit** Space is the **frontend**; the **FastAPI** Space is the **backend**. The UI’s Python code uses `ENV_BASE_URL` for all `requests` to `/health`, `/rl/learning-curve`, `/benchmark`, and patch endpoints. There is no client-side browser CORS to the API — the **Streamlit server** fetches the API.
+
+**When demoing the hosted app**, in the **Streamlit** Space only ([CompliancePatchBench-UI](https://huggingface.co/spaces/rachana05/CompliancePatchBench-UI)) go to **Settings → Variables and secrets** and set:
+
+- **`ENV_BASE_URL`** = the **deployed** API base URL, i.e. the public `https://…` of the **running** FastAPI Space (the `*.hf.space` URL you see in the address bar or Open in browser for the **API** Space, not the `huggingface.co/spaces/.../tree` page URL, and with **no** trailing path). Example shape: `https://rachana05-compliance-patch-bench.hf.space`
+
+**Do not** use `http://localhost:7860` for a deployed Space: inside the UI container, `localhost` is the UI itself, not the API, so the frontend will not be connected to the backend and the app falls back to demo data.
+
+**Local dev:** on your laptop, `http://127.0.0.1:7860` is fine if the API listens there; optional Docker: `http://host.docker.internal:7860` from a UI container to the host’s API.
+
+**Check:** in a browser, `GET {ENV_BASE_URL}/health` should return `{"status":"ok",...}`. Then restart the UI Space and confirm the green “Environment Online” state (or the demo-data warning is gone).
 
 This repo is ready to deploy as a Docker-based Hugging Face Space.
 

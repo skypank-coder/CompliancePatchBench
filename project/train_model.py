@@ -110,8 +110,7 @@ def train_with_unsloth(cfg: TrainConfig) -> Dict:
     model = FastLanguageModel.get_peft_model(
         model,
         r=cfg.lora_r,
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
-                        "gate_proj", "up_proj", "down_proj"],
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
         lora_alpha=cfg.lora_alpha,
         lora_dropout=cfg.lora_dropout,
         bias="none",

@@ -6,19 +6,27 @@ if os.getcwd() != REPO_DIR:
 if REPO_DIR not in sys.path:
     sys.path.insert(0, REPO_DIR)
 
-from environment.tasks.task1_single_file import get_task as get_task1
-from environment.tasks.task2_django_app import get_task as get_task2
-from environment.tasks.task3_microservices import get_task as get_task3
-
-raw_tasks = [get_task1(), get_task2(), get_task3()]
-
-# Try optional tasks
-for mod_name in ['task4_django_rest', 'task5_fastapi', 'task1b_connected', 'task2b_multifile']:
+# Load task1–task5 and optional extra templates (diverse pool for GRPO + dataset)
+_TASK_MODULES = [
+    'task1_single_file',
+    'task2_django_app',
+    'task3_microservices',
+    'task4_django_rest',
+    'task5_fastapi',
+    'task1b_connected',
+    'task2b_multifile',
+]
+raw_tasks = []
+_loaded_modules = []
+for mod_name in _TASK_MODULES:
     try:
         m = importlib.import_module(f'environment.tasks.{mod_name}')
         raw_tasks.append(m.get_task())
-    except Exception:
-        pass
+        _loaded_modules.append(mod_name)
+    except Exception as e:
+        print(f'FAILED to load task: {mod_name}')
+        print(f'  {type(e).__name__}: {e}')
+
 
 def normalise_task(t):
     return {
@@ -33,8 +41,30 @@ def normalise_task(t):
 
 tasks = [normalise_task(t) for t in raw_tasks]
 
-print(f'Loaded {len(tasks)} tasks:')
+print()
+print('=' * 60)
+print('TASK LOAD SUMMARY (CompliancePatchBench)')
+print('=' * 60)
+_n_ok, _n_exp = len(tasks), len(_TASK_MODULES)
+print(f'Total tasks successfully loaded: {_n_ok} (expected modules: {_n_exp})')
+if _n_ok < _n_exp:
+    print(f'  >>> {_n_exp - _n_ok} module(s) failed to import; check FAILED lines above.')
+print()
+print('Module → task_id:')
+for mod, t in zip(_loaded_modules, tasks):
+    print(f'  * {mod:22} →  {t["task_id"]}')
+print()
+print('Multi-file tasks in pool (2+ source files in codebase):')
+_mf = [t for t in tasks if len(t.get('codebase', {})) > 1]
+if _mf:
+    for t in _mf:
+        _keys = list(t['codebase'].keys())
+        print(f'  * {t["task_id"]}  ({len(_keys)} files)')
+else:
+    print('  (none — possible import failure: no tasks or only single-file codebases loaded)')
+print('=' * 60)
+print('Per-task detail:')
 for t in tasks:
     vcount = len(t['violations'])
     files = list(t['codebase'].keys())
-    print(f'  {t["task_id"]}: {vcount} violations, files={files}')
+    print(f'  {t["task_id"]}: {vcount} violations, {len(files)} file(s) — {files[:5]}{" ..." if len(files) > 5 else ""}')

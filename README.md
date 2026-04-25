@@ -32,6 +32,35 @@ by hidden constraints.
 - RL trajectories with `(state, action, reward, next_state, logprob, done)`.
 - Learning curves tracking reward, success rate, and hidden-violation rate.
 
+## Reward design (structured, not binary)
+
+The training signal is **not** a single pass/fail bit. The environment returns a
+**structured score**: CI and semantic checks, minimal-patch incentives,
+regression penalties, and **hidden-oracle** penalties for “fake-safe” fixes. Invalid
+or empty JSON actions are penalized so the model cannot ride on format luck alone;
+correct, safe repairs are rewarded, while silent compliance violations and
+adversarial shortcuts are pushed down. The Colab notebook reports **the same
+headline metrics** (success rate, average reward, share of violations fixed,
+hidden-violation rate) for the heuristic baseline and the trained policy on an
+identical task set, plus a small **held-out** task batch from a different
+`task_generator` seed to show generalization rather than memorization. After
+evaluating baseline and trained agents on the same tasks, the Colab run prints
+an **IMPROVEMENT** block: relative **success rate** (%) and absolute **avg_reward** delta.
+
+## Learning and evaluation figures
+
+These plots are generated from the committed `project/data/learning_curve.json`
+(iterative offline RL / evaluation log). Regenerate with:
+`python -m project.plot_submission_figures` (no retraining; reads JSON only). The
+Colab run also saves an on-policy **GRPO** reward figure (often noisy) under
+`project/data/figures/grpo_train_reward.png` when training completes.
+
+| Figure | What it shows |
+|--------|----------------|
+| ![Average reward vs RL Iteration](project/data/figures/reward_curve.png) | Y-axis: **avg_reward**; X-axis: **RL Iteration**; raw + window-smoothed (offline policy-iteration log). |
+| ![Success rate](project/data/figures/success_curve.png) | Y-axis: **success_rate**; X-axis: **RL Iteration**; task success = all fixable violations resolved with no hidden cheat. |
+| ![Hidden violation rate](project/data/figures/hidden_violation_curve.png) | Y-axis: **hidden_violation_rate**; X-axis: **RL Iteration**; lower is better (oracle-caught “safe” failures). |
+
 ## Why This RL Cannot Be Cheated
 
 The reward is not just "did the regex pass?" It is grounded in three checks:
@@ -72,6 +101,8 @@ Pipeline:
 ```text
 heuristic rollouts -> SFT initialization -> online GRPO rollouts -> GRPO-refined policy
 ```
+
+**Submission graphics:** `project/data/figures/reward_curve.png`, `success_curve.png`, `hidden_violation_curve.png` (and optional `grpo_train_reward.png` from the notebook).
 
 ## OpenEnv Hackathon Checklist
 

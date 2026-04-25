@@ -1,4 +1,5 @@
-# Step-by-step trace on task 1
+# DEMO TRACE — one task, step-by-step (trained policy, real env rewards)
+# Shows *reasoning* through actions, not just aggregate scores.
 from environment.patch_env import CompliancePatchEnv
 from project.utils import clip_model_json_output
 import torch, json
@@ -7,16 +8,17 @@ demo_task = tasks[0]
 env = CompliancePatchEnv()
 env.reset(demo_task['task_id'], demo_task['codebase'], demo_task['violations'])
 
-print(f'Task: {demo_task["task_id"]}')
+print('DEMO TRACE (single episode)')
+print('Task:', demo_task['task_id'])
 for v in demo_task['violations']:
-    print(f'  Violation: {v["rule_id"]} in {v["file"]} line {v["line_start"]}')
+    print(f"  Violation: {v['rule_id']} in {v['file']} line {v['line_start']}")
 
 messages = [
     {'role': 'system', 'content': SYSTEM_PROMPT},
-    {'role': 'user', 'content': build_prompt(demo_task).split('---\n\n', 1)[-1]},
+    {'role': 'user', 'content': build_prompt(demo_task, PROMPT_CLOSING_LINES[0]).split('---\n\n', 1)[-1]},
 ]
 
-print('\n=== Episode Trace ===')
+print('\n=== Step | action | step_reward | result (excerpt) ===')
 for step in range(10):
     text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     inputs = tokenizer(text, return_tensors='pt').to(model.device)
@@ -26,19 +28,19 @@ for step in range(10):
             max_new_tokens=MAX_NEW_TOKENS,
             temperature=0.1,
             do_sample=True,
-            pad_token_id=tokenizer.eos_token_id,
-            eos_token_id=tokenizer.eos_token_id,
+            pad_token_id=tokenizer.pad_token_id,
+            eos_token_id=[tokenizer.eos_token_id, tokenizer.encode('}', add_special_tokens=False)[-1]],
         )
     completion = tokenizer.decode(out[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
     completion = clip_model_json_output(completion)
     actions = parse_json_actions(completion)
     action = actions[0] if actions else {'action_type': 'finalize_patch'}
     obs, r, done, info = env.step(action)
-    print(f'Step {step+1:2d} | {action.get("action_type","?"):14s} | r={r:+.3f} | {obs["action_result"][:60]}')
+    print(f'Step {step+1:2d} | {str(action.get("action_type", "?")):14s} | r={r:+.3f} | {obs["action_result"][:80]}')
     messages.append({'role': 'assistant', 'content': completion})
     messages.append({'role': 'user', 'content': f'Result: {obs["action_result"][:150]}'})
     if done or action.get('action_type') == 'finalize_patch':
-        print(f'\nFinal score: {info.get("final_score", 0):.4f}')
+        print(f'\nFinal result: score={info.get("final_score", 0):.4f}')
         for c in info.get('critique', {}).get('ci_results', []):
             print(f'  {"OK" if c["ci"]=="PASS" else "FAIL"} {c["rule_id"]}: {c.get("reason","")[:60]}')
         break

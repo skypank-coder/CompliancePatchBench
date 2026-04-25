@@ -144,6 +144,23 @@ def compute_patch_reward(
     return round(delta, 4), breakdown
 
 
+def _gdpr_art25_semantic_test(code: str, line_start: Optional[int], line_end: Optional[int]) -> bool:
+    """
+    GDPR-ART25: require real rate limiting (not satisfied by @app.route alone).
+    If line_start/line_end are set, require a `def` in the same region; otherwise
+    require any function definition (looser legacy path when lines are missing).
+    """
+    if not (("@limiter" in code) or ("limiter.limit" in code)):
+        return False
+    lines = code.splitlines()
+    if line_start is not None and line_end is not None:
+        lo = max(0, int(line_start) - 3)
+        hi = int(line_end) + 2
+        window = lines[lo:hi] if lo < len(lines) else []
+        return any("def " in line for line in window)
+    return "def " in code
+
+
 # ── CI Sandbox ────────────────────────────────────────────────────────────────
 
 class CISandbox:
@@ -399,13 +416,8 @@ class CISandbox:
                 "description": "Must not expose password_hash in responses"
             },
             "GDPR-ART25": {
-                "test": lambda code, ls, le: (
-                    # Must have rate limiting
-                    ("@limiter" in code or "limiter.limit" in code or "@app.route" in code) and
-                    # Must have function definition (not deleted)
-                    "def " in code
-                ),
-                "description": "Must have rate limiting on function"
+                "test": lambda code, ls, le: _gdpr_art25_semantic_test(code, ls, le),
+                "description": "Must have rate limiting decorator; `def` near patched lines (not @app.route alone)"
             },
             "OWASP-A03": {
                 "test": lambda code, ls, le: (

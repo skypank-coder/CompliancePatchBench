@@ -1,0 +1,78 @@
+# Generalization (held-out generated tasks) + learning-curve figures + final summary
+import json
+import os
+from pathlib import Path
+from project.task_generator import generate_tasks
+from project.hackathon_metrics import episode_summary, print_final_summary
+from project.plot_submission_figures import plot_from_learning_curve
+
+REPO = Path('/content/CompliancePatchBench')
+if not (REPO / 'project' / 'hackathon_metrics.py').is_file():
+    REPO = Path(os.getcwd())
+
+def _normalise_task(t: dict) -> dict:
+    v = t.get('ground_truth', t.get('violations', []))
+    return {
+        'task_id': t['task_id'],
+        'codebase': t.get('codebase', {}),
+        'violations': v,
+        'framework': t.get('framework', ['GDPR']),
+        'file_reads_remaining': t.get('file_reads_remaining', 5),
+    }
+
+GEN_SEED, GEN_N = 1337, 4
+raw_gen = generate_tasks(GEN_N, seed=GEN_SEED)
+gen_tasks = [_normalise_task(t) for t in raw_gen]
+print('GENERALIZATION TEST:')
+print('  held-out task_generator set (seed={}  n={})'.format(GEN_SEED, GEN_N))
+print('  (Templates differ from the fixed get_task() Colab pool — not the same task_ids as training.)')
+ge_base, ge_trained = [], []
+for task in gen_tasks:
+    s, cr = heuristic_score(task)
+    ge_base.append({
+        'task_id': task['task_id'], 'final_score': float(s),
+        'violations_fixed': int((cr or {}).get('violations_fixed', 0) or 0),
+        'violations_total': int((cr or {}).get('violations_total', 0) or 0),
+        'hidden_violation': bool((cr or {}).get('hidden_violation', False)),
+    })
+    a, cr2 = run_trained_agent(task)
+    ge_trained.append({
+        'task_id': task['task_id'], 'final_score': float(a),
+        'violations_fixed': int((cr2 or {}).get('violations_fixed', 0) or 0),
+        'violations_total': int((cr2 or {}).get('violations_total', 0) or 0),
+        'hidden_violation': bool((cr2 or {}).get('hidden_violation', False)),
+    })
+
+g_b = episode_summary(ge_base)
+g_t = episode_summary(ge_trained)
+print('  baseline success_rate:  ', f"{g_b['success_rate']:.4f}")
+print('  trained success_rate:   ', f"{g_t['success_rate']:.4f}")
+print()
+
+# Iterative-RL learning curves (data file in repo; documents offline RL policy iteration)
+_lc_path = REPO / 'project' / 'data' / 'learning_curve.json'
+_fig_dir = REPO / 'project' / 'data' / 'figures'
+if _lc_path.is_file():
+    _rows = json.loads(_lc_path.read_text())
+    if isinstance(_rows, list) and _rows:
+        try:
+            a, b, c = plot_from_learning_curve(_rows, _fig_dir, window=4)
+            print('Learning-curve figures (iterative RL on committed log):')
+            for p in (a, b, c):
+                print(' ', p)
+        except Exception as e:
+            print('Could not plot learning_curve.json:', e)
+else:
+    print('(No', _lc_path, '— skip static RL iteration curves.)')
+
+print_final_summary(
+    n_tasks=len(tasks),
+    base_sr=float(_b['success_rate']),
+    train_sr=float(_t['success_rate']),
+    base_ar=float(_b['avg_reward']),
+    train_ar=float(_t['avg_reward']),
+    gen_base_sr=float(g_b['success_rate']),
+    gen_train_sr=float(g_t['success_rate']),
+)
+print('  See also: project/data/figures/ for reward / success / hidden_violation vs RL iteration.')
+print('  GRPO on-policy step reward: smoothed plot in the training section above.')

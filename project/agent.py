@@ -35,7 +35,7 @@ log = get_logger("agent")
 
 # Decoding: pass max_new_tokens (and only that) to model.generate; do not set generation_config
 # to duplicate length — avoids HF warnings. JSON span is taken via clip_model_json_output.
-GENERATION_MAX_NEW_TOKENS = 256
+GENERATION_MAX_NEW_TOKENS = 512
 STOP_TOKENS = ["}"]  # used only for legacy health heuristics; prefer clip_model_json_output
 
 
@@ -336,15 +336,25 @@ def make_hf_pipeline_backend(
             messages, tokenize=False, add_generation_prompt=True,
         )
         inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+        t = max(0.0, float(temperature))
         with torch.no_grad():
-            out = model.generate(
-                **inputs,
-                max_new_tokens=max_new_tokens,
-                temperature=0.1,
-                do_sample=True,
-                pad_token_id=tokenizer.pad_token_id,
-                eos_token_id=tokenizer.eos_token_id,
-            )
+            if t <= 0.0:
+                out = model.generate(
+                    **inputs,
+                    max_new_tokens=max_new_tokens,
+                    do_sample=False,
+                    pad_token_id=tokenizer.pad_token_id,
+                    eos_token_id=tokenizer.eos_token_id,
+                )
+            else:
+                out = model.generate(
+                    **inputs,
+                    max_new_tokens=max_new_tokens,
+                    do_sample=True,
+                    temperature=t,
+                    pad_token_id=tokenizer.pad_token_id,
+                    eos_token_id=tokenizer.eos_token_id,
+                )
         text = tokenizer.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
         return clip_model_json_output(text)
 

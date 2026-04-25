@@ -75,7 +75,7 @@ def rollout(model, tokenizer, task_id: str) -> dict:
             outputs = model.generate(
                 **inputs,
                 max_new_tokens=GENERATION_MAX_NEW_TOKENS,
-                temperature=0.1,
+                temperature=0.8,
                 do_sample=True,
                 pad_token_id=tokenizer.pad_token_id,
                 eos_token_id=tokenizer.eos_token_id,
@@ -214,6 +214,20 @@ def train():
     from datasets import Dataset
     dataset = Dataset.from_list(prompts)
 
+    _rbrace = tokenizer.encode("}", add_special_tokens=False)
+    _rbrace_id = _rbrace[-1] if _rbrace else None
+    _eos = getattr(tokenizer, "eos_token_id", None)
+    _extra_eos: List[int] = []
+    if _eos is not None:
+        _extra_eos.append(int(_eos))
+    if _rbrace_id is not None and _rbrace_id not in _extra_eos:
+        _extra_eos.append(int(_rbrace_id))
+    _gen_kw = None
+    if _extra_eos:
+        _gen_kw = {
+            "eos_token_id": _extra_eos if len(_extra_eos) > 1 else _extra_eos[0]
+        }
+
     config = GRPOConfig(
         output_dir="./patch_agent_model",
         max_steps=MAX_STEPS,
@@ -226,6 +240,7 @@ def train():
         max_prompt_length=1536,
         max_completion_length=GENERATION_MAX_NEW_TOKENS,
         num_generations=4,
+        generation_kwargs=_gen_kw,
     )
 
     trainer = GRPOTrainer(

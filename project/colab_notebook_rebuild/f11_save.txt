@@ -16,6 +16,7 @@ results = {
     'improvement': float(avg_after - avg_baseline) if ('avg_after' in dir() and 'avg_baseline' in dir()) else None,
     'per_task_baseline': baseline_scores if 'baseline_scores' in dir() else {},
     'per_task_trained': after_scores if 'after_scores' in dir() else {},
+    'submission_figures': 'project/data/figures/reward_curve.png, success_curve.png, hidden_violation_curve.png, grpo_train_reward.png (after notebook run)',
     'status': 'real_training_run',
 }
 with open('/content/training_results.json', 'w') as f:

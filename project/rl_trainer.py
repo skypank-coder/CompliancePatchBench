@@ -172,7 +172,7 @@ class RLConfig:
     use_tabular_rl: bool = False
     tabular_alpha: float = 0.45
     tabular_epsilon: float = 0.20
-    exploration_temperature: float = 0.1
+    exploration_temperature: float = 0.8
 
 
 class TabularPatchPolicy:
@@ -455,6 +455,8 @@ def _grpo_reward_factory(component_log: List[Dict[str, float]], health_log: List
                 })
                 rewards.append(_clip_reward(-0.5))
                 continue
+            # +0.1 shaping when at least one parseable JSON action (matches Colab compliance_patch_reward)
+            json_shaping = 0.1
 
             env = CompliancePatchEnv()
             env.reset(
@@ -484,7 +486,7 @@ def _grpo_reward_factory(component_log: List[Dict[str, float]], health_log: List
 
             breakdown = (final_info.get("critique", {}) or {}).get("reward_breakdown", {})
             component_log.append(decompose_reward_breakdown(breakdown))
-            rewards.append(_clip_reward(final_score))
+            rewards.append(_clip_reward(final_score + json_shaping))
         return rewards
 
     return _reward
@@ -519,6 +521,28 @@ def _accepted_kwargs(cls: Any, kwargs: Dict[str, Any]) -> Dict[str, Any]:
     if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()):
         return kwargs
     return {k: v for k, v in kwargs.items() if k in params}
+
+
+def _grpo_generation_kwargs_rbrace_eos(tokenizer: Any) -> Optional[Dict[str, Any]]:
+    """
+    Add '}' as an extra EOS so generate() can stop after one JSON object instead of
+    always filling max_new_tokens (which zeros TRL's mean_terminated_length signal).
+    """
+    rbrace_ids = (
+        tokenizer.encode("}", add_special_tokens=False) if tokenizer is not None else []
+    )
+    rbrace = rbrace_ids[-1] if rbrace_ids else None
+    eos = getattr(tokenizer, "eos_token_id", None)
+    extra: List[int] = []
+    if eos is not None:
+        extra.append(int(eos))
+    if rbrace is not None and rbrace not in extra:
+        extra.append(int(rbrace))
+    if not extra:
+        return None
+    if len(extra) == 1:
+        return {"eos_token_id": extra[0]}
+    return {"eos_token_id": extra}
 
 
 def _rollout_generation_health(rollouts: List[Any]) -> Dict[str, float]:
@@ -556,7 +580,7 @@ def _load_grpo_policy(cfg: RLConfig, policy_path: Optional[str]):
         model = FastLanguageModel.get_peft_model(
             model,
             r=16,
-            target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+            target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
             lora_alpha=32,
             lora_dropout=0.05,
             bias="none",
@@ -587,7 +611,7 @@ def _current_policy_backend(cfg: RLConfig, model_path: Optional[str], temperatur
     """
     Use a local SFT/RL LoRA policy if present; otherwise deterministic heuristic.
 
-    During RL rollout we set `temperature≈0.3` for stochastic exploration.
+    During RL rollout we set temperature around 0.8 (GRPO needs diverse group samples).
     During evaluation we set `temperature=0.0` for deterministic scoring.
     """
     if model_path and Path(model_path).exists():
@@ -611,15 +635,25 @@ def _current_policy_backend(cfg: RLConfig, model_path: Optional[str], temperatur
             def _call(messages: List[Dict[str, str]]) -> str:
                 prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
                 inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+                t = max(0.0, float(temperature))
                 with torch.no_grad():
-                    out = model.generate(
-                        **inputs,
-                        max_new_tokens=GENERATION_MAX_NEW_TOKENS,
-                        temperature=0.1,
-                        do_sample=True,
-                        pad_token_id=tokenizer.pad_token_id,
-                        eos_token_id=tokenizer.eos_token_id,
-                    )
+                    if t <= 0.0:
+                        out = model.generate(
+                            **inputs,
+                            max_new_tokens=GENERATION_MAX_NEW_TOKENS,
+                            do_sample=False,
+                            pad_token_id=tokenizer.pad_token_id,
+                            eos_token_id=tokenizer.eos_token_id,
+                        )
+                    else:
+                        out = model.generate(
+                            **inputs,
+                            max_new_tokens=GENERATION_MAX_NEW_TOKENS,
+                            do_sample=True,
+                            temperature=t,
+                            pad_token_id=tokenizer.pad_token_id,
+                            eos_token_id=tokenizer.eos_token_id,
+                        )
                 text = tokenizer.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
                 return clip_model_json_output(text)
 
@@ -760,7 +794,8 @@ def policy_gradient_update(
     out_dir = Path(cfg.output_dir) / f"iter_{iteration}"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    grpo_kwargs = _accepted_kwargs(GRPOConfig, {
+    _gkw = _grpo_generation_kwargs_rbrace_eos(tokenizer)
+    grpo_kwargs: Dict[str, Any] = {
         "output_dir": str(out_dir),
         "max_steps": max(1, len(train_tasks) * cfg.epochs_per_iteration),
         "per_device_train_batch_size": cfg.batch_size,
@@ -773,8 +808,10 @@ def policy_gradient_update(
         "max_completion_length": GENERATION_MAX_NEW_TOKENS,
         "num_generations": 4,
         "temperature": cfg.exploration_temperature,
-    })
-    args = GRPOConfig(**grpo_kwargs)
+    }
+    if _gkw is not None:
+        grpo_kwargs["generation_kwargs"] = _gkw
+    args = GRPOConfig(**_accepted_kwargs(GRPOConfig, grpo_kwargs))
     trainer = GRPOTrainer(
         model=model,
         args=args,
@@ -1001,8 +1038,8 @@ def _parse_args() -> argparse.Namespace:
                    help="Use the tabular controller only for CPU dry-run/baseline rollouts; final training uses TRL GRPO.")
     p.add_argument("--tabular-alpha", type=float, default=0.45)
     p.add_argument("--tabular-epsilon", type=float, default=0.20)
-    p.add_argument("--exploration-temperature", type=float, default=0.1,
-                   help="Neural policy sampling temperature for GRPO / rollout (default 0.1).")
+    p.add_argument("--exploration-temperature", type=float, default=0.8,
+                   help="Neural policy sampling temperature for GRPO / rollout (default 0.8; low values hurt group-relative advantages).")
     return p.parse_args()
 
 

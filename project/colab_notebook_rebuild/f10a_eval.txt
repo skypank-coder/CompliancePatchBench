@@ -8,7 +8,7 @@ FastLanguageModel.for_inference(model)
 def run_trained_agent(task, max_steps=8):
     env = CompliancePatchEnv()
     env.reset(task['task_id'], task['codebase'], task['violations'])
-    prompt = build_prompt(task)
+    prompt = build_prompt(task, PROMPT_CLOSING_LINES[0])
     messages = [
         {'role': 'system', 'content': SYSTEM_PROMPT},
         {'role': 'user', 'content': prompt.split('---\n\n', 1)[-1]},
@@ -22,8 +22,8 @@ def run_trained_agent(task, max_steps=8):
                 max_new_tokens=MAX_NEW_TOKENS,
                 temperature=0.1,
                 do_sample=True,
-                pad_token_id=tokenizer.eos_token_id,
-                eos_token_id=tokenizer.eos_token_id,
+                pad_token_id=tokenizer.pad_token_id,
+                eos_token_id=[tokenizer.eos_token_id, tokenizer.encode('}', add_special_tokens=False)[-1]],
             )
         completion = tokenizer.decode(out[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
         completion = clip_model_json_output(completion)
@@ -33,24 +33,41 @@ def run_trained_agent(task, max_steps=8):
         messages.append({'role': 'assistant', 'content': completion})
         messages.append({'role': 'user', 'content': f'Result: {obs["action_result"][:150]}'})
         if done or action.get('action_type') == 'finalize_patch':
-            return info.get('final_score', r)
+            cr = info.get('critique') or {}
+            return float(info.get('final_score', r)), cr
     _, r, _, info = env.step({'action_type': 'finalize_patch'})
-    return info.get('final_score', r)
+    cr = info.get('critique') or {}
+    return float(info.get('final_score', r)), cr
 
-print('=== Before vs After Training ===')
+print('=== Before vs After Training (per-task final_score) ===')
 print(f'{"Task":<32} {"Before":>8} {"After":>8} {"Delta":>8}')
 print('-' * 60)
 
 after_scores = {}
+trained_episodes = []
 for task in tasks:
     before = baseline_scores.get(task['task_id'], 0.0)
-    after  = run_trained_agent(task)
+    after, cr = run_trained_agent(task)
     after_scores[task['task_id']] = after
+    trained_episodes.append({
+        'task_id': task['task_id'],
+        'final_score': after,
+        'violations_fixed': int((cr or {}).get('violations_fixed', 0) or 0),
+        'violations_total': int((cr or {}).get('violations_total', 0) or 0),
+        'hidden_violation': bool((cr or {}).get('hidden_violation', False)),
+    })
     arrow = '↑' if after > before else ('↓' if after < before else '=')
     print(f'{task["task_id"]:<32} {before:>8.4f} {after:>8.4f} {arrow}{abs(after-before):>7.4f}')
 
 avg_before = sum(baseline_scores.values()) / len(baseline_scores)
 avg_after  = sum(after_scores.values()) / len(after_scores)
 print('-' * 60)
-print(f'{"AVERAGE":<32} {avg_before:>8.4f} {avg_after:>8.4f} {avg_after-avg_before:>+8.4f}')
-print(f'\nImprovement: {(avg_after-avg_before):+.4f}')
+print(f'{"AVERAGE (final_score)":<32} {avg_before:>8.4f} {avg_after:>8.4f} {avg_after-avg_before:>+8.4f}')
+
+from project.hackathon_metrics import episode_summary, print_before_after, print_improvement
+_t = episode_summary(trained_episodes)
+_b = episode_summary(baseline_episodes)
+print()
+print("Structured comparison (for judges — same task set):")
+print_before_after(_b, _t, title="(success = all violations fixed, no hidden cheat)")
+print_improvement(_b, _t)

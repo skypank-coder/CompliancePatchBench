@@ -78,7 +78,9 @@ def compliance_patch_reward(completions, prompts=None, task_payload=None, **kwar
     avg = sum(rewards) / len(rewards) if rewards else 0.0
     successes = sum(1 for r in rewards if r > 1.0)
     print(f'  Batch avg={avg:+.4f} | success={successes}/{len(rewards)} | {[round(r,2) for r in rewards]}')
-    return rewards
+    # TRL GRPOTrainer must receive list[float] (one per completion). A bare `return` returns None and breaks training.
+    assert len(rewards) == len(completions), (len(rewards), len(completions))
+    return list(rewards)
 
 
 # ── Verify reward function works before training ───────────────────────────────

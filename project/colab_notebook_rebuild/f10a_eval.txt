@@ -19,7 +19,7 @@ def run_trained_agent(task, max_steps=8):
         with torch.no_grad():
             out = model.generate(
                 **inputs,
-                max_new_tokens=128,
+                max_new_tokens=MAX_NEW_TOKENS,
                 temperature=0.1,
                 do_sample=True,
                 pad_token_id=tokenizer.eos_token_id,

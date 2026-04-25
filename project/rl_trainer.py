@@ -617,7 +617,7 @@ def _current_policy_backend(cfg: RLConfig, model_path: Optional[str], temperatur
                         max_new_tokens=GENERATION_MAX_NEW_TOKENS,
                         temperature=0.1,
                         do_sample=True,
-                        pad_token_id=tokenizer.eos_token_id,
+                        pad_token_id=tokenizer.pad_token_id,
                         eos_token_id=tokenizer.eos_token_id,
                     )
                 text = tokenizer.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)

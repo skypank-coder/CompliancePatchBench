@@ -23,14 +23,14 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from environment.patch_env import CompliancePatchEnv
-from project.agent import GENERATION_MAX_NEW_TOKENS, align_causal_lm_and_tokenizer
+from project.agent import GENERATION_MAX_NEW_TOKENS, SYSTEM_PROMPT, align_causal_lm_and_tokenizer
 from project.utils import clip_model_json_output
 from environment.tasks.task1_single_file import get_task as get_task1
 from environment.tasks.task2_django_app import get_task as get_task2
 
 ENV_BASE_URL = os.environ.get("ENV_BASE_URL", "http://localhost:7860")
 MODEL_NAME = os.environ.get("MODEL_NAME", "unsloth/Qwen2.5-3B-Instruct")
-MAX_STEPS = 60
+MAX_STEPS = 30
 BATCH_SIZE = 4
 TASKS = ["task1_single_file", "task2_django_app"]
 
@@ -38,26 +38,6 @@ TASK_CACHE = {
     "task1_single_file": get_task1(),
     "task2_django_app": get_task2(),
 }
-
-
-SYSTEM_PROMPT = """You are a security compliance engineer. You receive a Python codebase with known GDPR/OWASP violations.
-Your job: write a minimal patch that fixes each violation without breaking existing code.
-
-You MUST output ONLY valid JSON. No text before or after JSON. First char must be '{', last char must be '}'.
-
-You interact via JSON actions:
-{"action_type": "read_file", "path": "filename.py"}
-{"action_type": "write_patch", "file": "filename.py", "line_start": 45, "line_end": 47, "new_code": "replacement code here"}
-{"action_type": "run_ci"}
-{"action_type": "finalize_patch"}
-
-Rules:
-- Read the file first to understand context
-- Write the minimal fix — never delete the flagged line entirely
-- run_ci after patching to check your work
-- finalize_patch when done
-
-Respond with ONE JSON action per turn."""
 
 
 def call_env(endpoint: str, payload: dict) -> dict:
@@ -94,10 +74,10 @@ def rollout(model, tokenizer, task_id: str) -> dict:
         with torch.no_grad():
             outputs = model.generate(
                 **inputs,
-                max_new_tokens=128,
+                max_new_tokens=GENERATION_MAX_NEW_TOKENS,
                 temperature=0.1,
                 do_sample=True,
-                pad_token_id=tokenizer.eos_token_id,
+                pad_token_id=tokenizer.pad_token_id,
                 eos_token_id=tokenizer.eos_token_id,
             )
 
@@ -243,6 +223,7 @@ def train():
         logging_steps=5,
         save_steps=20,
         report_to="none",
+        max_prompt_length=1536,
         max_completion_length=GENERATION_MAX_NEW_TOKENS,
         num_generations=4,
     )

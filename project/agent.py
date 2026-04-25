@@ -35,7 +35,7 @@ log = get_logger("agent")
 
 # Decoding: pass max_new_tokens (and only that) to model.generate; do not set generation_config
 # to duplicate length — avoids HF warnings. JSON span is taken via clip_model_json_output.
-GENERATION_MAX_NEW_TOKENS = 128
+GENERATION_MAX_NEW_TOKENS = 256
 STOP_TOKENS = ["}"]  # used only for legacy health heuristics; prefer clip_model_json_output
 
 
@@ -57,46 +57,28 @@ def align_causal_lm_and_tokenizer(model, tokenizer, max_new_tokens: int = GENERA
     bos_id = getattr(tokenizer, "bos_token_id", None)
     if getattr(model.config, "bos_token_id", None) in (None,) and bos_id is not None:
         model.config.bos_token_id = bos_id
-    _ = max_new_tokens  # unused; TRL/ callers pass max_new_tokens on generate
+    # Clear stale max_length on any HuggingFace GenerationConfig so it never stacks
+    # with per-call `max_new_tokens=...` in model.generate. Do not set max_new_tokens
+    # on generation_config (avoids TRL/HF double-counting).
+    gen = getattr(model, "generation_config", None)
+    if gen is not None:
+        try:
+            if hasattr(gen, "max_length"):
+                gen.max_length = None
+            if pad_id is not None and hasattr(gen, "pad_token_id"):
+                gen.pad_token_id = pad_id
+            if eos_id is not None and hasattr(gen, "eos_token_id"):
+                gen.eos_token_id = eos_id
+        except Exception:
+            pass
+    _ = max_new_tokens  # unused here; generate() call sites pass max_new_tokens=GENERATION_MAX_NEW_TOKENS
 
 
-# ─── Strict system prompt ────────────────────────────────────────────────────
-#
-# This prompt is intentionally short + emphatic. Every requirement that's
-# critical for downstream training (single JSON, exact keys, no commentary)
-# is repeated and bullet-listed. The model has fewer ways to go wrong.
+# ─── System prompt (keep short: completion budget is limited in GRPO) ─────────
 
-SYSTEM_PROMPT = """You are CompliancePatchAgent, a code-fix agent operating inside a sandboxed CompliancePatchEnv.
-
-You MUST output ONLY valid JSON. No text before or after JSON. First char must be '{', last char must be '}'.
-
-GOAL
-    Fix every violation in the codebase by emitting a sequence of single-action JSON commands.
-    One JSON object per turn. Nothing else.
-
-OUTPUT FORMAT — STRICT
-    Reply with EXACTLY ONE JSON object. No prose, no markdown, no code fences,
-    no leading/trailing text. The first character of your reply MUST be "{"
-    and the last character MUST be "}". Any other format is treated as a crash.
-
-ALLOWED ACTIONS
-    {"action_type": "read_file",       "path": "<exact filename from observation>"}
-    {"action_type": "write_patch",     "file": "<exact filename>", "line_start": <int>, "line_end": <int>, "new_code": "<replacement source>"}
-    {"action_type": "run_ci"}
-    {"action_type": "finalize_patch"}
-
-HARD RULES
-    1. "file" / "path" MUST appear verbatim in the observation's "available_files".
-    2. "line_start"/"line_end" MUST come from the violations list — do NOT guess.
-    3. "new_code" MUST keep the original Python indentation; never delete the
-       function or replace it with `pass` (deletion = -1.0 cheat penalty).
-    4. Always run_ci AFTER writing a patch so the env can score it.
-    5. When all violations are PASS, emit finalize_patch.
-    6. If the read budget is exhausted, do not call read_file — write the patch
-       directly using the line numbers in the violations list.
-
-THINK SILENTLY. RESPOND WITH ONE JSON OBJECT.
-"""
+SYSTEM_PROMPT = """Output ONLY one JSON action. No prose. No markdown.
+Actions: {"action_type":"read_file","path":"F"} | {"action_type":"write_patch","file":"F","line_start":N,"line_end":N,"new_code":"CODE"} | {"action_type":"run_ci"} | {"action_type":"finalize_patch"}
+Never set new_code to empty string (-1.0 penalty). Fix violations minimally."""
 
 # Predefined SAFE patches per rule, used by the heuristic fallback policy.
 # Stored unindented — the heuristic re-applies the original line's indent
@@ -328,7 +310,7 @@ def make_openai_backend(
 
 def make_hf_pipeline_backend(
     model_name_or_path: str,
-    max_new_tokens: int = 128,
+    max_new_tokens: int = GENERATION_MAX_NEW_TOKENS,
     temperature: float = 0.0,
 ) -> LLMCallable:
     """Local HF model via transformers — used inside the Colab training notebook."""
@@ -360,7 +342,7 @@ def make_hf_pipeline_backend(
                 max_new_tokens=max_new_tokens,
                 temperature=0.1,
                 do_sample=True,
-                pad_token_id=tokenizer.eos_token_id,
+                pad_token_id=tokenizer.pad_token_id,
                 eos_token_id=tokenizer.eos_token_id,
             )
         text = tokenizer.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)

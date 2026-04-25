@@ -1,0 +1,86 @@
+name: compliance-patch-bench
+version: "2.0.0"
+description: >
+  CompliancePatchBench: A two-agent self-improving compliance environment.
+  Agent 1 (Patcher) receives codebases with flagged GDPR/OWASP/SOC2 violations
+  and must write minimal, correct patches that pass a deterministic CI checker.
+  Agent 2 (Adversary) generates new violations designed to evade the patcher,
+  creating a self-improving adversarial loop. Reward is deterministic and
+  explicitly anti-cheat: patch deletion is penalized -1.0, verbosity is penalized,
+  and AST-level minimality is rewarded.
+
+author: "CompliancePatchBench Team"
+tags:
+  - openenv
+  - security
+  - compliance
+  - gdpr
+  - owasp
+  - self-play
+  - world-modeling
+  - self-improvement
+
+themes:
+  - "Theme 3.1: Professional Tasks (World Modeling)"
+  - "Theme 4: Self-Improvement via adversarial self-play"
+
+tasks:
+  - id: task1_single_file
+    name: "Single-file GDPR patch"
+    difficulty: easy
+    description: "Patch 3 GDPR violations in a Flask routes.py"
+    max_steps: 15
+    file_budget: 3
+    frameworks: ["GDPR"]
+
+  - id: task2_django_app
+    name: "Django multi-file patch"
+    difficulty: medium
+    description: "Patch 8 violations across 5 Django files"
+    max_steps: 30
+    file_budget: 7
+    frameworks: ["GDPR", "OWASP"]
+
+  - id: task3_microservices
+    name: "Microservices patch with cross-file reasoning"
+    difficulty: hard
+    description: "Patch 15 violations across 4 microservices, 7-file read budget"
+    max_steps: 50
+    file_budget: 7
+    frameworks: ["GDPR", "OWASP", "SOC2"]
+
+action_space:
+  detection_agent:
+    - read_file
+    - search_codebase
+    - flag_violation
+    - propose_fix
+    - finalize_audit
+  patch_agent:
+    - read_file
+    - write_patch
+    - run_ci
+    - finalize_patch
+
+reward_structure:
+  patch_agent:
+    ci_pass: +1.0
+    tests_pass: +0.5
+    minimal_patch: +0.2
+    verbosity_penalty: "-0.3 per extra line changed"
+    deletion_cheat: -1.0
+  adversary_agent:
+    evades_patcher: +1.0
+    trivially_detectable: -0.5
+
+endpoints:
+  health: "GET /health"
+  tasks: "GET /tasks"
+  benchmark: "GET /benchmark"
+  reset: "POST /reset"
+  step: "POST /step"
+  state: "GET /state"
+  patch_reset: "POST /patch/reset"
+  patch_step: "POST /patch/step"
+  patch_state: "GET /patch/state"
+  leaderboard: "GET /leaderboard"

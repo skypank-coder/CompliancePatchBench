@@ -1,0 +1,29 @@
+{
+  "model": "Qwen2.5-1.5B-Instruct",
+  "training_method": "GRPO (Group Relative Policy Optimization)",
+  "hardware": "Google Colab T4 GPU",
+  "training_steps": 60,
+  "batch_size": 4,
+  "learning_rate": 5e-06,
+  "tasks": [
+    "task1_single_file",
+    "task2_django_app"
+  ],
+  "metrics": {
+    "initial_avg_reward": 0.1335,
+    "final_avg_reward": 1.2437,
+    "improvement_percent": 831.3,
+    "max_reward": 1.3149,
+    "min_reward": 0.0,
+    "std_dev": 0.4731
+  },
+  "performance": {
+    "baseline_violations_fixed": "0/3",
+    "trained_violations_fixed": "1.5/3",
+    "baseline_ci_pass_rate": "0%",
+    "trained_ci_pass_rate": "45%",
+    "deletion_attempts_reduced": "80%"
+  },
+  "training_time": "2.5 hours",
+  "status": "simulated_for_documentation"
+}

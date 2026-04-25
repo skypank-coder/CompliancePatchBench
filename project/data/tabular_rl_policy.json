@@ -1,0 +1,34 @@
+{
+  "alpha": 0.45,
+  "epsilon": 0.2,
+  "q": {
+    "medium|std|OWASP-A03": {
+      "safe": 0.05,
+      "skip": -0.08000000000000002,
+      "cheat": -0.2
+    },
+    "easy|std|GDPR-ART32": {
+      "safe": 0.25,
+      "skip": 0.7100000000000001,
+      "cheat": -0.2
+    },
+    "easy|std|OWASP-A02": {
+      "safe": 1.3856171875,
+      "skip": -0.1,
+      "cheat": -0.2
+    },
+    "medium|std|GDPR-ART5-1C": {
+      "safe": 0.05,
+      "skip": 0.1
+    },
+    "easy|std|GDPR-ART5-1C": {
+      "safe": 0.25,
+      "skip": -0.1
+    },
+    "easy|std|GDPR-ART5-1A": {
+      "safe": 0.25,
+      "skip": -0.1,
+      "cheat": -0.2
+    }
+  }
+}

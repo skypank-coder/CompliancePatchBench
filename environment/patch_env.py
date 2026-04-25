@@ -184,39 +184,88 @@ class CISandbox:
         """
         VIOLATION_PATTERNS = {
             "GDPR-ART5-1A": [
-                r"logger\.(info|debug|warning).*email",  # Simplified: any logger with email
+                r"logger\.(info|debug|warning|error).*email",
                 r"print.*email",
-                r"f['\"].*\{.*email.*\}",  # f-string with email variable
+                r"f['\"].*\{.*email.*\}",
+                r"log.*user\.email",
+                r"logger\.(info|debug|warning|error).*request\.body",
+                r"log_body",
             ],
             "GDPR-ART5-1C": [
-                r"to_dict\(\).*password",
-                r"fields.*=.*\[.*['\"]password['\"]",
-                r"password_hash.*\}",  # password_hash in dict/json
-                r"['\"]password_hash['\"]",  # password_hash as key
+                r"to_dict\(\)",
+                r"fields\s*=.*password",
+                r"includes password",
+                r"['\"]password_hash['\"]",
+                r"password_hash.*\}",
+                r"jsonify\(\{['\"]user['\"]\s*:",
+                r"internal_id",
+                r"api_key",
             ],
-            "GDPR-ART25": [],   # absence of limiter decorator — checked differently
-            "OWASP-A03": [
-                r"\.raw\(f['\"]",
-                r"execute\(f['\"]",
-                r"SELECT.*\{.*\}",
+            "GDPR-ART25": [
+                r"@app\.route.*(?!@limiter)",
+                r"def \w+\(\):\s*$",
+            ],
+            "GDPR-ART32": [
+                r"DEBUG\s*=\s*True",
+                r"debug\s*=\s*True",
+                r"password\s*!=\s*['\"]password123['\"]",
+                r"def create_payment\(",
+            ],
+            "GDPR-ART30": [
+                r"GDPR-ART30 violation",
+                r"missing created_at",
+                r"# no audit",
+                r"without.*log",
+                r"pass\s*#.*log",
+                r"class User:",
+            ],
+            "OWASP-A01": [
+                r"objects\.get\(id=",
+                r"objects\.get\(pk=",
+                r"get_object_or_404\(",
+                r"jwt\.encode\(\{['\"]user_id['\"]",
+                r"User\.get_by_id\(",
+                r"no tenant scope",
             ],
             "OWASP-A02": [
                 r"SECRET_KEY\s*=\s*['\"][^'\"]{4,}['\"]",
                 r"API_KEY\s*=\s*['\"]",
+                r"PASSWORD\s*=\s*['\"]",
+                r"SELECT \* FROM payments",
+                r"build_report_query",
             ],
-            "GDPR-ART32": [
-                r"DEBUG\s*=\s*True",
+            "OWASP-A03": [
+                r"\.raw\(f['\"]",
+                r"execute\(f['\"]",
+                r"SELECT.*\{.*\}",
+                r"build_report_query",
+                r"should filter tenant",
             ],
-            "OWASP-A01": [
-                r"objects\.get\(pk=pk\)(?!.*user)",
-                r"get_object_or_404.*(?!.*request\.user)",
+            "OWASP-A04": [
+                r"OWASP-A04 violation",
+                r"no extension/MIME validation",
+                r"etree\.parse\(",
+                r"xml\.parse\(",
+                r"lxml\.etree",
+                r"parseString\(",
+                r"def list_users\(",
+            ],
+            "SOC2-CC6.1": [
+                r"logging\.disable\(",
+                r"log_level\s*=\s*None",
+                r"logger\.disabled\s*=\s*True",
+                r"def token_info\(",
+                r"def refund_payment\(",
+            ],
+            "SOC2-CC7.2": [
+                r"except\s*:\s*pass",
+                r"except Exception:\s*pass",
             ],
         }
 
         patterns = VIOLATION_PATTERNS.get(rule_id, [])
         if not patterns:
-            # No pattern to check — assume fixed if patch exists and syntax is valid
-            return True, "no pattern — assumed fixed"
+            return False, f"no pattern defined for {rule_id} — violation assumed present"
 
         lines = patched_code.split("\n")
         for pattern in patterns:
@@ -472,11 +521,15 @@ class CompliancePatchEnv:
 
         # Terminate on step limit OR if all violations fixed
         if self.state.step_count >= self.state.max_steps:
-            self.state.done = True
             info["termination_reason"] = "max_steps_reached"
+            obs, reward, done, finalize_info = self._finalize(termination_reason="max_steps_reached")
+            info.update(finalize_info)
+            return obs, reward, done, info
         elif self.state.violations_fixed_count == len(self.state.violations):
-            self.state.done = True
             info["termination_reason"] = "all_violations_fixed"
+            obs, reward, done, finalize_info = self._finalize(termination_reason="all_violations_fixed")
+            info.update(finalize_info)
+            return obs, reward, done, info
 
         obs = self._build_observation(result)
         return obs, reward_delta, self.state.done, info
@@ -691,13 +744,45 @@ class CompliancePatchEnv:
         summary = f"CI complete: {pass_count}/{total} violations fixed. Reward: {total_reward:+.4f}"
         return summary, total_reward, total_breakdown
 
-    def _finalize(self) -> Tuple[Dict, float, bool, Dict]:
+    def _hidden_compliance_check(self) -> Dict:
+        """Run the hidden oracle inside the environment reward path."""
+        try:
+            from project.hidden_compliance import run_hidden_compliance_checks
+        except Exception:
+            return {"hidden_violation": False, "reason": "hidden_oracle_unavailable", "findings": []}
+        return run_hidden_compliance_checks(dict(self.state.patches))
+
+    def _finalize(self, termination_reason: str = "finalize_patch") -> Tuple[Dict, float, bool, Dict]:
         _, final_reward, breakdown = self._run_ci()
-        self.state.cumulative_reward = round(final_reward, 4)
-        self.state.done = True
 
         pass_count = sum(1 for r in self.state.ci_results if r["ci"] == "PASS")
         total = len(self.state.violations)
+        hidden = self._hidden_compliance_check()
+        hidden_violation = bool(hidden.get("hidden_violation"))
+        partial_fix = 0 < pass_count < total
+        no_fix = total > 0 and pass_count == 0 and not hidden_violation
+        fail_timeout = termination_reason == "max_steps_reached" and pass_count < total
+
+        if hidden_violation:
+            final_reward -= 1.0
+            breakdown["hidden_violation_penalty"] = -1.0
+        if partial_fix:
+            final_reward -= 0.4
+            breakdown["partial_fix_penalty"] = -0.4
+        if no_fix:
+            final_reward -= 0.1
+            breakdown["no_fix_penalty"] = -0.1
+        if fail_timeout:
+            final_reward -= 0.10
+            breakdown["timeout_penalty"] = -0.10
+
+        self.state.cumulative_reward = round(final_reward, 4)
+        self.state.done = True
+        if hidden_violation or partial_fix or fail_timeout:
+            self.state.reward_events.append(
+                f"finalize;reason={termination_reason};hidden={hidden_violation};"
+                f"partial={partial_fix};no_fix={no_fix};timeout={fail_timeout};score={self.state.cumulative_reward:.4f}"
+            )
 
         critique = {
             "final_score": self.state.cumulative_reward,
@@ -705,6 +790,12 @@ class CompliancePatchEnv:
             "violations_total": total,
             "ci_results": self.state.ci_results,
             "reward_breakdown": breakdown,
+            "hidden_violation": hidden_violation,
+            "hidden_reason": str(hidden.get("reason", "ok")),
+            "hidden_findings": list(hidden.get("findings", [])),
+            "partial_fix": partial_fix,
+            "no_fix": no_fix,
+            "termination_reason": termination_reason,
         }
 
         obs = self._build_observation(f"Patch session finalized. Score: {self.state.cumulative_reward:.4f}")
@@ -739,4 +830,6 @@ class CompliancePatchEnv:
             "semantic_validations_passed": self.state.semantic_validations_passed,
             "semantic_validations_failed": self.state.semantic_validations_failed,
             "reward_events": self.state.reward_events[-5:] if len(self.state.reward_events) > 5 else self.state.reward_events,
+            "hidden_violation": any("hidden=True" in event for event in self.state.reward_events),
+            "no_fix": any("no_fix=True" in event for event in self.state.reward_events),
         }

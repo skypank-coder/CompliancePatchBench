@@ -1,0 +1,471 @@
+{
+  "before": {
+    "n": 40,
+    "avg_score": 1.5425,
+    "overall_success_rate": 0.8,
+    "easy_success_rate": 0.95,
+    "medium_success_rate": 0.6667,
+    "hard_success_rate": 0.625,
+    "hidden_violation_rate": 0.075,
+    "partial_fix_rate": 0.075,
+    "fail_rate": 0.125,
+    "cheat_resistance": 0.925,
+    "violations_total": 44,
+    "violations_fixed": 38,
+    "violations_fixed_pct": 0.8636,
+    "errors": 0,
+    "by_difficulty_counts": {
+      "easy": 20,
+      "medium": 12,
+      "hard": 8
+    },
+    "status_counts": {
+      "SUCCESS": 32,
+      "PARTIAL": 3,
+      "FAIL": 5
+    },
+    "success_rate": 0.8,
+    "wall_time_s": 0.13
+  },
+  "after": {
+    "n": 40,
+    "avg_score": 1.5425,
+    "overall_success_rate": 0.8,
+    "easy_success_rate": 0.95,
+    "medium_success_rate": 0.6667,
+    "hard_success_rate": 0.625,
+    "hidden_violation_rate": 0.075,
+    "partial_fix_rate": 0.075,
+    "fail_rate": 0.125,
+    "cheat_resistance": 0.925,
+    "violations_total": 44,
+    "violations_fixed": 38,
+    "violations_fixed_pct": 0.8636,
+    "errors": 0,
+    "by_difficulty_counts": {
+      "easy": 20,
+      "medium": 12,
+      "hard": 8
+    },
+    "status_counts": {
+      "SUCCESS": 32,
+      "PARTIAL": 3,
+      "FAIL": 5
+    },
+    "success_rate": 0.8,
+    "wall_time_s": 0.13
+  },
+  "delta": {
+    "avg_score": 0.0,
+    "overall_success_rate": 0.0,
+    "easy_success_rate": 0.0,
+    "medium_success_rate": 0.0,
+    "hard_success_rate": 0.0,
+    "violations_fixed_pct": 0.0,
+    "hidden_violation_rate": 0.0,
+    "partial_fix_rate": 0.0,
+    "cheat_resistance": 0.0
+  },
+  "per_task": [
+    {
+      "task_id": "adv_debug_env_default_v1_8d942c",
+      "difficulty": "hard",
+      "before_score": 1.8,
+      "after_score": 1.8,
+      "before_status": "SUCCESS",
+      "after_status": "SUCCESS",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "adv_multi_file_secret_import_v1_816b2c",
+      "difficulty": "hard",
+      "before_score": 1.6,
+      "after_score": 1.6,
+      "before_status": "SUCCESS",
+      "after_status": "SUCCESS",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "adv_partial_idor_v1_980d12",
+      "difficulty": "hard",
+      "before_score": 2.7,
+      "after_score": 2.7,
+      "before_status": "PARTIAL",
+      "after_status": "PARTIAL",
+      "before_hidden": true,
+      "after_hidden": true
+    },
+    {
+      "task_id": "adv_pii_hash_trap_v1_e70a14",
+      "difficulty": "hard",
+      "before_score": -0.5,
+      "after_score": -0.5,
+      "before_status": "PARTIAL",
+      "after_status": "PARTIAL",
+      "before_hidden": true,
+      "after_hidden": true
+    },
+    {
+      "task_id": "adv_secret_env_default_v1_d69a52",
+      "difficulty": "hard",
+      "before_score": 1.1,
+      "after_score": 1.1,
+      "before_status": "PARTIAL",
+      "after_status": "PARTIAL",
+      "before_hidden": true,
+      "after_hidden": true
+    },
+    {
+      "task_id": "adv_sql_strip_quote_v1_24cd8b",
+      "difficulty": "hard",
+      "before_score": 1.8,
+      "after_score": 1.8,
+      "before_status": "SUCCESS",
+      "after_status": "SUCCESS",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "cq_bare_except_pii_v1_fd1930",
+      "difficulty": "medium",
+      "before_score": 1.8,
+      "after_score": 1.8,
+      "before_status": "SUCCESS",
+      "after_status": "SUCCESS",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "cq_bare_except_pii_v2_d07332",
+      "difficulty": "medium",
+      "before_score": 0.0,
+      "after_score": 0.0,
+      "before_status": "FAIL",
+      "after_status": "FAIL",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "cq_bare_except_pii_v3_9be67d",
+      "difficulty": "medium",
+      "before_score": 0.0,
+      "after_score": 0.0,
+      "before_status": "FAIL",
+      "after_status": "FAIL",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "gdpr_dict_password_leak_v1_ffb93e",
+      "difficulty": "easy",
+      "before_score": 1.6,
+      "after_score": 1.6,
+      "before_status": "SUCCESS",
+      "after_status": "SUCCESS",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "gdpr_dict_password_leak_v2_c4150e",
+      "difficulty": "easy",
+      "before_score": 1.6,
+      "after_score": 1.6,
+      "before_status": "SUCCESS",
+      "after_status": "SUCCESS",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "gdpr_dict_password_leak_v3_83a775",
+      "difficulty": "easy",
+      "before_score": 0.0,
+      "after_score": 0.0,
+      "before_status": "FAIL",
+      "after_status": "FAIL",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "gdpr_email_in_print_v1_79afac",
+      "difficulty": "easy",
+      "before_score": 1.6,
+      "after_score": 1.6,
+      "before_status": "SUCCESS",
+      "after_status": "SUCCESS",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "gdpr_email_in_print_v2_6841f6",
+      "difficulty": "easy",
+      "before_score": 1.6,
+      "after_score": 1.6,
+      "before_status": "SUCCESS",
+      "after_status": "SUCCESS",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "gdpr_email_in_print_v3_7a91bb",
+      "difficulty": "easy",
+      "before_score": 1.6,
+      "after_score": 1.6,
+      "before_status": "SUCCESS",
+      "after_status": "SUCCESS",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "gdpr_email_in_print_v4_f38ace",
+      "difficulty": "easy",
+      "before_score": 1.6,
+      "after_score": 1.6,
+      "before_status": "SUCCESS",
+      "after_status": "SUCCESS",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "gdpr_leak_pwd_hash_v1_7e04b3",
+      "difficulty": "medium",
+      "before_score": 1.6,
+      "after_score": 1.6,
+      "before_status": "SUCCESS",
+      "after_status": "SUCCESS",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "gdpr_leak_pwd_hash_v2_43de24",
+      "difficulty": "medium",
+      "before_score": 1.8,
+      "after_score": 1.8,
+      "before_status": "SUCCESS",
+      "after_status": "SUCCESS",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "gdpr_leak_pwd_hash_v3_9bf53b",
+      "difficulty": "medium",
+      "before_score": 1.6,
+      "after_score": 1.6,
+      "before_status": "SUCCESS",
+      "after_status": "SUCCESS",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "gdpr_log_pii_v1_66ff1f",
+      "difficulty": "easy",
+      "before_score": 1.6,
+      "after_score": 1.6,
+      "before_status": "SUCCESS",
+      "after_status": "SUCCESS",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "gdpr_log_pii_v2_e907fb",
+      "difficulty": "easy",
+      "before_score": 1.6,
+      "after_score": 1.6,
+      "before_status": "SUCCESS",
+      "after_status": "SUCCESS",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "gdpr_log_pii_v3_1bb55b",
+      "difficulty": "easy",
+      "before_score": 1.6,
+      "after_score": 1.6,
+      "before_status": "SUCCESS",
+      "after_status": "SUCCESS",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "gdpr_log_pii_v4_87db41",
+      "difficulty": "easy",
+      "before_score": 1.6,
+      "after_score": 1.6,
+      "before_status": "SUCCESS",
+      "after_status": "SUCCESS",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "multi_idor_and_sql_v1_6786cd",
+      "difficulty": "hard",
+      "before_score": 3.6,
+      "after_score": 3.6,
+      "before_status": "SUCCESS",
+      "after_status": "SUCCESS",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "multi_secret_and_pii_v1_6c8266",
+      "difficulty": "hard",
+      "before_score": 4.8,
+      "after_score": 4.8,
+      "before_status": "SUCCESS",
+      "after_status": "SUCCESS",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "sec_api_key_leak_v1_4bcfa4",
+      "difficulty": "easy",
+      "before_score": 1.6,
+      "after_score": 1.6,
+      "before_status": "SUCCESS",
+      "after_status": "SUCCESS",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "sec_api_key_leak_v2_142766",
+      "difficulty": "easy",
+      "before_score": 1.8,
+      "after_score": 1.8,
+      "before_status": "SUCCESS",
+      "after_status": "SUCCESS",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "sec_api_key_leak_v3_5fdda5",
+      "difficulty": "easy",
+      "before_score": 1.6,
+      "after_score": 1.6,
+      "before_status": "SUCCESS",
+      "after_status": "SUCCESS",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "sec_debug_true_v1_4dd14a",
+      "difficulty": "easy",
+      "before_score": 1.8,
+      "after_score": 1.8,
+      "before_status": "SUCCESS",
+      "after_status": "SUCCESS",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "sec_debug_true_v2_a49f43",
+      "difficulty": "easy",
+      "before_score": 1.8,
+      "after_score": 1.8,
+      "before_status": "SUCCESS",
+      "after_status": "SUCCESS",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "sec_debug_true_v3_877771",
+      "difficulty": "easy",
+      "before_score": 1.8,
+      "after_score": 1.8,
+      "before_status": "SUCCESS",
+      "after_status": "SUCCESS",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "sec_hardcoded_secret_v1_4f2488",
+      "difficulty": "easy",
+      "before_score": 1.6,
+      "after_score": 1.6,
+      "before_status": "SUCCESS",
+      "after_status": "SUCCESS",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "sec_hardcoded_secret_v2_e6f1e7",
+      "difficulty": "easy",
+      "before_score": 1.6,
+      "after_score": 1.6,
+      "before_status": "SUCCESS",
+      "after_status": "SUCCESS",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "sec_hardcoded_secret_v3_4fa6b6",
+      "difficulty": "easy",
+      "before_score": 1.6,
+      "after_score": 1.6,
+      "before_status": "SUCCESS",
+      "after_status": "SUCCESS",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "sec_idor_v1_66242d",
+      "difficulty": "medium",
+      "before_score": 1.8,
+      "after_score": 1.8,
+      "before_status": "SUCCESS",
+      "after_status": "SUCCESS",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "sec_idor_v2_6f38b9",
+      "difficulty": "medium",
+      "before_score": 1.6,
+      "after_score": 1.6,
+      "before_status": "SUCCESS",
+      "after_status": "SUCCESS",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "sec_idor_v3_89f20b",
+      "difficulty": "medium",
+      "before_score": 1.6,
+      "after_score": 1.6,
+      "before_status": "SUCCESS",
+      "after_status": "SUCCESS",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "sec_sql_injection_v1_2ae1e2",
+      "difficulty": "medium",
+      "before_score": 0.0,
+      "after_score": 0.0,
+      "before_status": "FAIL",
+      "after_status": "FAIL",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "sec_sql_injection_v2_f1ca50",
+      "difficulty": "medium",
+      "before_score": 1.8,
+      "after_score": 1.8,
+      "before_status": "SUCCESS",
+      "after_status": "SUCCESS",
+      "before_hidden": false,
+      "after_hidden": false
+    },
+    {
+      "task_id": "sec_sql_injection_v3_45b8ee",
+      "difficulty": "medium",
+      "before_score": 0.0,
+      "after_score": 0.0,
+      "before_status": "FAIL",
+      "after_status": "FAIL",
+      "before_hidden": false,
+      "after_hidden": false
+    }
+  ]
+}

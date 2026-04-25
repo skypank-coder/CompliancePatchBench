@@ -1,0 +1,22 @@
+# Runtime deps for the project/ package only.
+# (The base CompliancePatchEnv is in ../requirements.txt)
+
+# Core
+pydantic>=2.7.1
+requests>=2.32.3
+
+# LLM backends
+openai>=1.30.1            # optional — for OpenAI / vLLM / Together backends
+transformers>=4.47.0      # optional — for the local HF backend
+datasets>=2.18.0          # SFT dataset loading
+
+# Training (only needed when running train_model.py)
+# Unsloth is the fastest path on Colab T4. If it isn't installable on your
+# platform, train_model.py automatically falls back to peft + trl.
+trl>=0.14.0
+peft>=0.14.0
+accelerate>=0.34.0
+bitsandbytes>=0.43.0       # 4-bit quant; CUDA only
+
+# Optional but nice for plotting eval curves
+matplotlib>=3.8.0

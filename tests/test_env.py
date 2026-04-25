@@ -24,9 +24,9 @@ class TestReset:
         assert len(obs.available_files) == 5
         assert obs.file_reads_remaining == 7
 
-    def test_reset_task3_has_twelve_files(self, env):
+    def test_reset_task3_has_expected_files(self, env):
         obs = env.reset("task3_microservices")
-        assert len(obs.available_files) == 12
+        assert len(obs.available_files) == 15
         assert obs.file_reads_remaining == 7
 
     def test_reset_clears_previous_state(self, env):

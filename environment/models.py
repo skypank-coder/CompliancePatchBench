@@ -1,4 +1,4 @@
-"""Pydantic v2 models for RegAudit OpenEnv environment."""
+"""Pydantic v2 models for the CompliancePatchBench OpenEnv environment."""
 
 from enum import Enum
 from typing import Annotated, Dict, List, Literal, Optional, Union

@@ -7,3 +7,39 @@ dist/
 *.pyo
 .git/
 .env
+
+# Local editor / OS state
+.DS_Store
+.cursor/
+.vscode/
+
+# Notebooks and presentation/demo artifacts are not needed in the API image.
+*.ipynb
+*.pptx
+PRESENTATION.md
+VISUAL_DEMO.md
+*_GUIDE.md
+*_SUMMARY.md
+*_STATUS.md
+*_READY.md
+*_COMPLETE.md
+*_RESULTS.md
+*_FIX*.md
+*_REFERENCE.md
+*_RESOLVED.md
+
+# Generated training/evaluation artifacts.
+checkpoint_step*.json
+reward_curve.*
+training_results.json
+preliminary_training_log.json
+project/data/*.jsonl
+project/data/eval_*.json
+project/data/*comparison*.json
+project/data/*training_log*.json
+project/data/rl_adapter/
+project/data/lora_adapter/
+
+# Test/cache outputs.
+.coverage
+htmlcov/

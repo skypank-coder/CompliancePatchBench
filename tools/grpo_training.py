@@ -11,15 +11,25 @@ Usage:
 
 import os
 import json
+import re
 import requests
 import torch
 from typing import List
+
+from environment.patch_env import CompliancePatchEnv
+from environment.tasks.task1_single_file import get_task as get_task1
+from environment.tasks.task2_django_app import get_task as get_task2
 
 ENV_BASE_URL = os.environ.get("ENV_BASE_URL", "http://localhost:7860")
 MODEL_NAME = "unsloth/Qwen2.5-1.5B-Instruct"
 MAX_STEPS = 60
 BATCH_SIZE = 4
 TASKS = ["task1_single_file", "task2_django_app"]
+
+TASK_CACHE = {
+    "task1_single_file": get_task1(),
+    "task2_django_app": get_task2(),
+}
 
 
 SYSTEM_PROMPT = """You are a security compliance engineer. You receive a Python codebase with known GDPR/OWASP violations.
@@ -96,11 +106,12 @@ def rollout(model, tokenizer, task_id: str) -> dict:
         step_resp = call_env("patch/step", {"session_id": session_id, "action": action})
         obs = step_resp["observation"]
         reward = step_resp["reward"]
+        reward_value = reward.get("value", 0.0) if isinstance(reward, dict) else reward
         done = step_resp["done"]
         final_reward = obs["cumulative_reward"]
 
         messages.append({"role": "assistant", "content": completion})
-        messages.append({"role": "user", "content": f"Result: {obs['action_result'][:500]}\nCI: {obs['ci_results']}\nReward: {reward:+.4f}"})
+        messages.append({"role": "user", "content": f"Result: {obs['action_result'][:500]}\nCI: {obs['ci_results']}\nReward: {reward_value:+.4f}"})
 
         if done or action.get("action_type") == "finalize_patch":
             break
@@ -140,18 +151,53 @@ def train():
     def reward_fn(completions, **kwargs) -> List[float]:
         """Reward function called by GRPOTrainer."""
         rewards = []
-        for comp in completions:
-            # Extract reward from the last env step embedded in completion metadata
-            # For GRPO: reward is passed via the rollout above
-            # Here we use a simple heuristic: if finalize_patch appears and CI PASS in text
-            if "finalize_patch" in comp and "ci_pass" in comp.lower():
-                rewards.append(1.5)
-            elif "ci_pass" in comp.lower():
-                rewards.append(0.8)
-            elif "finalize_patch" in comp:
-                rewards.append(0.1)
-            else:
-                rewards.append(-0.1)
+        task_ids = kwargs.get("task_id") or kwargs.get("task_ids") or ["task1_single_file"] * len(completions)
+        if isinstance(task_ids, str):
+            task_ids = [task_ids] * len(completions)
+
+        for i, comp in enumerate(completions):
+            task_id = task_ids[i] if i < len(task_ids) else "task1_single_file"
+            task = TASK_CACHE.get(task_id, TASK_CACHE["task1_single_file"])
+
+            actions = []
+            for match in re.finditer(r'\{[^{}]*"action_type"[^{}]*\}', comp, flags=re.DOTALL):
+                try:
+                    action = json.loads(match.group(0))
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(action, dict) and action.get("action_type"):
+                    actions.append(action)
+
+            if not actions:
+                rewards.append(-0.3)
+                continue
+
+            env = CompliancePatchEnv()
+            env.reset(
+                task_id=task_id,
+                codebase=task["codebase"],
+                violations=task["ground_truth"],
+                max_steps=12,
+                file_reads_remaining=task.get("file_reads_remaining", 5),
+            )
+
+            final_score = 0.0
+            try:
+                done = False
+                info = {}
+                for action in actions[:12]:
+                    obs, reward, done, info = env.step(action)
+                    final_score = float(info.get("final_score", reward))
+                    if done:
+                        break
+
+                if not done:
+                    obs, reward, done, info = env.step({"action_type": "finalize_patch"})
+                    final_score = float(info.get("final_score", 0.0))
+
+                rewards.append(final_score)
+            except Exception:
+                rewards.append(0.0)
         reward_history.extend(rewards)
         avg = sum(rewards) / len(rewards)
         print(f"  Batch reward avg: {avg:.4f} | history avg: {sum(reward_history)/len(reward_history):.4f}")

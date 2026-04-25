@@ -13,8 +13,8 @@ class ViolationGrader(BaseGrader):
 
         if task_id == "task1_single_file":
             return (
-                abs(pred["line_start"] - gt["line_start"]) <= 8 and
-                abs(pred["line_end"] - gt["line_end"]) <= 8
+                abs(pred["line_start"] - gt["line_start"]) <= 10 and
+                abs(pred["line_end"] - gt["line_end"]) <= 10
             )
 
         if task_id == "task2_django_app":

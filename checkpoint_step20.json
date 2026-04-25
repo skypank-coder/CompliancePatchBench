@@ -1,7 +1,0 @@
-{
-  "step": 20,
-  "reward": 1.19268,
-  "status": "preliminary",
-  "note": "Proof-of-concept training on CPU. Full training requires GPU.",
-  "next_steps": "Run full 60-step training on Colab T4 GPU"
-}

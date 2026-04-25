@@ -1,0 +1,1497 @@
+[
+  {
+    "task_id": "gdpr_log_pii_v1_66ff1f",
+    "category": "gdpr",
+    "framework": [
+      "GDPR"
+    ],
+    "description": "Login handler logs personal data (email, IP).",
+    "difficulty": "easy",
+    "adversarial": false,
+    "codebase": {
+      "routes_v2.py": "# generated padding line 0\n# generated padding line 1\nfrom flask import Flask, request, jsonify\nimport logging\n\napp = Flask(__name__)\nlogger = logging.getLogger(__name__)\n\n\ndef authenticate(account_email, password):\n    account = lookup_user(account_email)\n    if not account or account.password_hash != hash(password):\n        return None\n    return account\n\n\n@app.route('/login', methods=['POST'])\ndef login():\n    body = request.get_json() or {}\n    account = authenticate(body.get('email'), body.get('password'))\n    if account is None:\n        return jsonify({'error': 'invalid'}), 401\n    logger.info(f\"User { account.email } just logged in from {request.remote_addr}\")\n    return jsonify({'token': 'ok', 'uid': account.id})\n\n\ndef lookup_user(email):\n    return None\n"
+    },
+    "violations": [
+      {
+        "file": "routes_v2.py",
+        "rule_id": "GDPR-ART5-1A",
+        "severity": "medium",
+        "line_start": 23,
+        "line_end": 23
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "routes_v2.py",
+        "rule_id": "GDPR-ART5-1A",
+        "fix": "Log user ID instead of email/IP."
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": -1,
+      "added_red_herrings": true,
+      "extra_padding_lines": 2
+    }
+  },
+  {
+    "task_id": "gdpr_email_in_print_v1_79afac",
+    "category": "gdpr",
+    "framework": [
+      "GDPR"
+    ],
+    "description": "Print statement leaks user email.",
+    "difficulty": "easy",
+    "adversarial": false,
+    "codebase": {
+      "notify_handler.py": "# generated padding line 0\n# generated padding line 1\n# generated padding line 2\n# generated padding line 3\n# generated padding line 4\nimport logging\n\nlogger = logging.getLogger(__name__)\n\n\ndef on_signup(user):\n    print(f\"new signup for email={user.email}\")\n    return True\n\n\ndef on_password_reset(user):\n    logger.info('password reset requested (uid=%s)', user.id)\n    return True\n"
+    },
+    "violations": [
+      {
+        "file": "notify_handler.py",
+        "rule_id": "GDPR-ART5-1A",
+        "severity": "high",
+        "line_start": 12,
+        "line_end": 12
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "notify_handler.py",
+        "rule_id": "GDPR-ART5-1A",
+        "fix": "Use logger.info('signup uid=%s', user.id) instead of print(email)."
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": 1,
+      "added_red_herrings": true,
+      "extra_padding_lines": 5
+    }
+  },
+  {
+    "task_id": "sec_hardcoded_secret_v1_4f2488",
+    "category": "security",
+    "framework": [
+      "OWASP"
+    ],
+    "description": "SECRET_KEY / API_KEY hardcoded in settings.",
+    "difficulty": "easy",
+    "adversarial": false,
+    "codebase": {
+      "app_config.py": "import os\n\nDEBUG = False\nALLOWED_HOSTS = ['*']\n\nSECRET_KEY = 'super-secret-prod-key-do-not-share-abc123'\nAPI_KEY = 'sk-live-1234567890abcdef'\n\nDATABASES = {\n    'default': {\n        'ENGINE': 'django.db.backends.postgresql',\n        'NAME': 'app',\n        'USER': 'admin',\n        'PASSWORD': 'admin',\n        'HOST': 'localhost',\n    }\n}\n"
+    },
+    "violations": [
+      {
+        "file": "app_config.py",
+        "rule_id": "OWASP-A02",
+        "severity": "critical",
+        "line_start": 6,
+        "line_end": 6
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "app_config.py",
+        "rule_id": "OWASP-A02",
+        "fix": "SECRET_KEY = os.environ['SECRET_KEY']"
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": 0,
+      "added_red_herrings": false,
+      "extra_padding_lines": 0
+    }
+  },
+  {
+    "task_id": "sec_debug_true_v1_4dd14a",
+    "category": "security",
+    "framework": [
+      "GDPR",
+      "OWASP"
+    ],
+    "description": "Production settings ship with DEBUG = True.",
+    "difficulty": "easy",
+    "adversarial": false,
+    "codebase": {
+      "settings.py": "# generated padding line 0\n# generated padding line 1\nimport os\n\nDEBUG = True\nALLOWED_HOSTS = ['*']\n\nLOGGING = {\n    'version': 1,\n    'handlers': {'console': {'class': 'logging.StreamHandler'}},\n    'root': {'handlers': ['console'], 'level': 'DEBUG'},\n}\n"
+    },
+    "violations": [
+      {
+        "file": "settings.py",
+        "rule_id": "GDPR-ART32",
+        "severity": "critical",
+        "line_start": 5,
+        "line_end": 5
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "settings.py",
+        "rule_id": "GDPR-ART32",
+        "fix": "DEBUG = False in production settings."
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": 0,
+      "added_red_herrings": false,
+      "extra_padding_lines": 2
+    }
+  },
+  {
+    "task_id": "sec_api_key_leak_v1_4bcfa4",
+    "category": "security",
+    "framework": [
+      "OWASP"
+    ],
+    "description": "Hardcoded API_KEY in config file.",
+    "difficulty": "easy",
+    "adversarial": false,
+    "codebase": {
+      "secrets_app.py": "# generated padding line 0\n# generated padding line 1\nimport os\n\nDEBUG = False\nALLOWED_HOSTS = ['api.example.com']\n\nAPI_KEY = 'sk-live-do-not-share-1234567890'\n\ndef get_client():\n    return {'auth': API_KEY}\n"
+    },
+    "violations": [
+      {
+        "file": "secrets_app.py",
+        "rule_id": "OWASP-A02",
+        "severity": "critical",
+        "line_start": 8,
+        "line_end": 8
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "secrets_app.py",
+        "rule_id": "OWASP-A02",
+        "fix": "API_KEY = os.environ['API_KEY']"
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": 0,
+      "added_red_herrings": false,
+      "extra_padding_lines": 2
+    }
+  },
+  {
+    "task_id": "gdpr_dict_password_leak_v1_ffb93e",
+    "category": "gdpr",
+    "framework": [
+      "GDPR"
+    ],
+    "description": "Endpoint serialises password_hash directly.",
+    "difficulty": "easy",
+    "adversarial": false,
+    "codebase": {
+      "session_api.py": "from flask import Flask, jsonify, request\n\napp = Flask(__name__)\n\nDB = {}\n\n\n@app.route('/me')\ndef me():\n    uid = int(request.args.get('uid', 0))\n    user = DB.get(uid, {'id': uid, 'email': 'x@y', 'password_hash': 'sha:abc'})\n    return jsonify({'id': user['id'], 'email': user['email'], 'password_hash': user['password_hash']})\n"
+    },
+    "violations": [
+      {
+        "file": "session_api.py",
+        "rule_id": "GDPR-ART5-1C",
+        "severity": "medium",
+        "line_start": 12,
+        "line_end": 12
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "session_api.py",
+        "rule_id": "GDPR-ART5-1C",
+        "fix": "Drop password_hash from the returned JSON."
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": -1,
+      "added_red_herrings": true,
+      "extra_padding_lines": 0
+    }
+  },
+  {
+    "task_id": "gdpr_log_pii_v2_e907fb",
+    "category": "gdpr",
+    "framework": [
+      "GDPR"
+    ],
+    "description": "Login handler logs personal data (email, IP).",
+    "difficulty": "easy",
+    "adversarial": false,
+    "codebase": {
+      "auth.py": "from flask import Flask, request, jsonify\nimport logging\n\napp = Flask(__name__)\nlogger = logging.getLogger(__name__)\n\n\ndef authenticate(member_email, password):\n    member = lookup_user(member_email)\n    if not member or member.password_hash != hash(password):\n        return None\n    return member\n\n\n@app.route('/login', methods=['POST'])\ndef login():\n    body = request.get_json() or {}\n    member = authenticate(body.get('email'), body.get('password'))\n    if member is None:\n        return jsonify({'error': 'invalid'}), 401\n    logger.info(f\"User { member.email } just logged in from {request.remote_addr}\")\n    return jsonify({'token': 'ok', 'uid': member.id})\n\n\ndef lookup_user(email):\n    return None\n"
+    },
+    "violations": [
+      {
+        "file": "auth.py",
+        "rule_id": "GDPR-ART5-1A",
+        "severity": "critical",
+        "line_start": 21,
+        "line_end": 21
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "auth.py",
+        "rule_id": "GDPR-ART5-1A",
+        "fix": "Log user ID instead of email/IP."
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": 1,
+      "added_red_herrings": true,
+      "extra_padding_lines": 0
+    }
+  },
+  {
+    "task_id": "gdpr_email_in_print_v2_6841f6",
+    "category": "gdpr",
+    "framework": [
+      "GDPR"
+    ],
+    "description": "Print statement leaks user email.",
+    "difficulty": "easy",
+    "adversarial": false,
+    "codebase": {
+      "events.py": "# generated padding line 0\n# generated padding line 1\nimport logging\n\nlogger = logging.getLogger(__name__)\n\n\ndef on_signup(user):\n    print(f\"new signup for email={user.email}\")\n    return True\n\n\ndef on_password_reset(user):\n    logger.info('password reset requested (uid=%s)', user.id)\n    return True\n"
+    },
+    "violations": [
+      {
+        "file": "events.py",
+        "rule_id": "GDPR-ART5-1A",
+        "severity": "medium",
+        "line_start": 9,
+        "line_end": 9
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "events.py",
+        "rule_id": "GDPR-ART5-1A",
+        "fix": "Use logger.info('signup uid=%s', user.id) instead of print(email)."
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": 0,
+      "added_red_herrings": true,
+      "extra_padding_lines": 2
+    }
+  },
+  {
+    "task_id": "sec_hardcoded_secret_v2_e6f1e7",
+    "category": "security",
+    "framework": [
+      "OWASP"
+    ],
+    "description": "SECRET_KEY / API_KEY hardcoded in settings.",
+    "difficulty": "easy",
+    "adversarial": false,
+    "codebase": {
+      "settings.py": "import os\n\nDEBUG = False\nALLOWED_HOSTS = ['*']\n\nSECRET_KEY = 'super-secret-prod-key-do-not-share-abc123'\nAPI_KEY = 'sk-live-1234567890abcdef'\n\nDATABASES = {\n    'default': {\n        'ENGINE': 'django.db.backends.postgresql',\n        'NAME': 'app',\n        'USER': 'admin',\n        'PASSWORD': 'admin',\n        'HOST': 'localhost',\n    }\n}\n"
+    },
+    "violations": [
+      {
+        "file": "settings.py",
+        "rule_id": "OWASP-A02",
+        "severity": "critical",
+        "line_start": 6,
+        "line_end": 6
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "settings.py",
+        "rule_id": "OWASP-A02",
+        "fix": "SECRET_KEY = os.environ['SECRET_KEY']"
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": 0,
+      "added_red_herrings": false,
+      "extra_padding_lines": 0
+    }
+  },
+  {
+    "task_id": "sec_debug_true_v2_a49f43",
+    "category": "security",
+    "framework": [
+      "GDPR",
+      "OWASP"
+    ],
+    "description": "Production settings ship with DEBUG = True.",
+    "difficulty": "easy",
+    "adversarial": false,
+    "codebase": {
+      "settings.py": "import os\n\nDEBUG = True\nALLOWED_HOSTS = ['*']\n\nLOGGING = {\n    'version': 1,\n    'handlers': {'console': {'class': 'logging.StreamHandler'}},\n    'root': {'handlers': ['console'], 'level': 'DEBUG'},\n}\n"
+    },
+    "violations": [
+      {
+        "file": "settings.py",
+        "rule_id": "GDPR-ART32",
+        "severity": "critical",
+        "line_start": 3,
+        "line_end": 3
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "settings.py",
+        "rule_id": "GDPR-ART32",
+        "fix": "DEBUG = False in production settings."
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": 0,
+      "added_red_herrings": false,
+      "extra_padding_lines": 0
+    }
+  },
+  {
+    "task_id": "sec_api_key_leak_v2_142766",
+    "category": "security",
+    "framework": [
+      "OWASP"
+    ],
+    "description": "Hardcoded API_KEY in config file.",
+    "difficulty": "easy",
+    "adversarial": false,
+    "codebase": {
+      "config.py": "# generated padding line 0\n# generated padding line 1\nimport os\n\nDEBUG = False\nALLOWED_HOSTS = ['api.example.com']\n\nAPI_KEY = 'sk-live-do-not-share-1234567890'\n\ndef get_client():\n    return {'auth': API_KEY}\n"
+    },
+    "violations": [
+      {
+        "file": "config.py",
+        "rule_id": "OWASP-A02",
+        "severity": "critical",
+        "line_start": 8,
+        "line_end": 8
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "config.py",
+        "rule_id": "OWASP-A02",
+        "fix": "API_KEY = os.environ['API_KEY']"
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": 0,
+      "added_red_herrings": false,
+      "extra_padding_lines": 2
+    }
+  },
+  {
+    "task_id": "gdpr_dict_password_leak_v2_c4150e",
+    "category": "gdpr",
+    "framework": [
+      "GDPR"
+    ],
+    "description": "Endpoint serialises password_hash directly.",
+    "difficulty": "easy",
+    "adversarial": false,
+    "codebase": {
+      "users_api.py": "from flask import Flask, jsonify, request\n\napp = Flask(__name__)\n\nDB = {}\n\n\n@app.route('/me')\ndef me():\n    uid = int(request.args.get('uid', 0))\n    user = DB.get(uid, {'id': uid, 'email': 'x@y', 'password_hash': 'sha:abc'})\n    return jsonify({'id': user['id'], 'email': user['email'], 'password_hash': user['password_hash']})\n"
+    },
+    "violations": [
+      {
+        "file": "users_api.py",
+        "rule_id": "GDPR-ART5-1C",
+        "severity": "high",
+        "line_start": 12,
+        "line_end": 12
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "users_api.py",
+        "rule_id": "GDPR-ART5-1C",
+        "fix": "Drop password_hash from the returned JSON."
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": 0,
+      "added_red_herrings": false,
+      "extra_padding_lines": 0
+    }
+  },
+  {
+    "task_id": "gdpr_log_pii_v3_1bb55b",
+    "category": "gdpr",
+    "framework": [
+      "GDPR"
+    ],
+    "description": "Login handler logs personal data (email, IP).",
+    "difficulty": "easy",
+    "adversarial": false,
+    "codebase": {
+      "routes.py": "# generated padding line 0\n# generated padding line 1\n# generated padding line 2\n# generated padding line 3\n# generated padding line 4\nfrom flask import Flask, request, jsonify\nimport logging\n\napp = Flask(__name__)\nlogger = logging.getLogger(__name__)\n\n\ndef authenticate(profile_email, password):\n    profile = lookup_user(profile_email)\n    if not profile or profile.password_hash != hash(password):\n        return None\n    return profile\n\n\n@app.route('/login', methods=['POST'])\ndef login():\n    body = request.get_json() or {}\n    profile = authenticate(body.get('email'), body.get('password'))\n    if profile is None:\n        return jsonify({'error': 'invalid'}), 401\n    logger.info(f\"User { profile.email } just logged in from {request.remote_addr}\")\n    return jsonify({'token': 'ok', 'uid': profile.id})\n\n\ndef lookup_user(email):\n    return None\n"
+    },
+    "violations": [
+      {
+        "file": "routes.py",
+        "rule_id": "GDPR-ART5-1A",
+        "severity": "high",
+        "line_start": 26,
+        "line_end": 26
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "routes.py",
+        "rule_id": "GDPR-ART5-1A",
+        "fix": "Log user ID instead of email/IP."
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": 0,
+      "added_red_herrings": true,
+      "extra_padding_lines": 5
+    }
+  },
+  {
+    "task_id": "gdpr_email_in_print_v3_7a91bb",
+    "category": "gdpr",
+    "framework": [
+      "GDPR"
+    ],
+    "description": "Print statement leaks user email.",
+    "difficulty": "easy",
+    "adversarial": false,
+    "codebase": {
+      "mailer.py": "import logging\n\nlogger = logging.getLogger(__name__)\n\n\ndef on_signup(user):\n    print(f\"new signup for email={user.email}\")\n    return True\n\n\ndef on_password_reset(user):\n    logger.info('password reset requested (uid=%s)', user.id)\n    return True\n"
+    },
+    "violations": [
+      {
+        "file": "mailer.py",
+        "rule_id": "GDPR-ART5-1A",
+        "severity": "low",
+        "line_start": 7,
+        "line_end": 7
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "mailer.py",
+        "rule_id": "GDPR-ART5-1A",
+        "fix": "Use logger.info('signup uid=%s', user.id) instead of print(email)."
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": -1,
+      "added_red_herrings": true,
+      "extra_padding_lines": 0
+    }
+  },
+  {
+    "task_id": "sec_hardcoded_secret_v3_4fa6b6",
+    "category": "security",
+    "framework": [
+      "OWASP"
+    ],
+    "description": "SECRET_KEY / API_KEY hardcoded in settings.",
+    "difficulty": "easy",
+    "adversarial": false,
+    "codebase": {
+      "app_config.py": "# generated padding line 0\n# generated padding line 1\n# generated padding line 2\n# generated padding line 3\n# generated padding line 4\n# generated padding line 5\n# generated padding line 6\n# generated padding line 7\nimport os\n\nDEBUG = False\nALLOWED_HOSTS = ['*']\n\nSECRET_KEY = 'super-secret-prod-key-do-not-share-abc123'\nAPI_KEY = 'sk-live-1234567890abcdef'\n\nDATABASES = {\n    'default': {\n        'ENGINE': 'django.db.backends.postgresql',\n        'NAME': 'app',\n        'USER': 'admin',\n        'PASSWORD': 'admin',\n        'HOST': 'localhost',\n    }\n}\n"
+    },
+    "violations": [
+      {
+        "file": "app_config.py",
+        "rule_id": "OWASP-A02",
+        "severity": "high",
+        "line_start": 14,
+        "line_end": 14
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "app_config.py",
+        "rule_id": "OWASP-A02",
+        "fix": "SECRET_KEY = os.environ['SECRET_KEY']"
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": -1,
+      "added_red_herrings": true,
+      "extra_padding_lines": 8
+    }
+  },
+  {
+    "task_id": "sec_debug_true_v3_877771",
+    "category": "security",
+    "framework": [
+      "GDPR",
+      "OWASP"
+    ],
+    "description": "Production settings ship with DEBUG = True.",
+    "difficulty": "easy",
+    "adversarial": false,
+    "codebase": {
+      "settings.py": "# generated padding line 0\n# generated padding line 1\n# generated padding line 2\n# generated padding line 3\n# generated padding line 4\nimport os\n\nDEBUG = True\nALLOWED_HOSTS = ['*']\n\nLOGGING = {\n    'version': 1,\n    'handlers': {'console': {'class': 'logging.StreamHandler'}},\n    'root': {'handlers': ['console'], 'level': 'DEBUG'},\n}\n"
+    },
+    "violations": [
+      {
+        "file": "settings.py",
+        "rule_id": "GDPR-ART32",
+        "severity": "critical",
+        "line_start": 8,
+        "line_end": 8
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "settings.py",
+        "rule_id": "GDPR-ART32",
+        "fix": "DEBUG = False in production settings."
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": 0,
+      "added_red_herrings": true,
+      "extra_padding_lines": 5
+    }
+  },
+  {
+    "task_id": "sec_api_key_leak_v3_5fdda5",
+    "category": "security",
+    "framework": [
+      "OWASP"
+    ],
+    "description": "Hardcoded API_KEY in config file.",
+    "difficulty": "easy",
+    "adversarial": false,
+    "codebase": {
+      "secrets.py": "# generated padding line 0\n# generated padding line 1\n# generated padding line 2\n# generated padding line 3\n# generated padding line 4\n# generated padding line 5\n# generated padding line 6\n# generated padding line 7\nimport os\n\nDEBUG = False\nALLOWED_HOSTS = ['api.example.com']\n\nAPI_KEY = 'sk-live-do-not-share-1234567890'\n\ndef get_client():\n    return {'auth': API_KEY}\n"
+    },
+    "violations": [
+      {
+        "file": "secrets.py",
+        "rule_id": "OWASP-A02",
+        "severity": "critical",
+        "line_start": 14,
+        "line_end": 14
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "secrets.py",
+        "rule_id": "OWASP-A02",
+        "fix": "API_KEY = os.environ['API_KEY']"
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": 0,
+      "added_red_herrings": false,
+      "extra_padding_lines": 8
+    }
+  },
+  {
+    "task_id": "gdpr_dict_password_leak_v3_83a775",
+    "category": "gdpr",
+    "framework": [
+      "GDPR"
+    ],
+    "description": "Endpoint serialises password_hash directly.",
+    "difficulty": "easy",
+    "adversarial": false,
+    "codebase": {
+      "session_api_handler.py": "# generated padding line 0\n# generated padding line 1\n# generated padding line 2\n# generated padding line 3\n# generated padding line 4\nfrom flask import Flask, jsonify, request\n\napp = Flask(__name__)\n\nDB = {}\n\n\n@app.route('/me')\ndef me():\n    uid = int(request.args.get('uid', 0))\n    user = DB.get(uid, {'id': uid, 'email': 'x@y', 'password_hash': 'sha:abc'})\n    return jsonify({'id': user['id'], 'email': user['email'], 'password_hash': user['password_hash']})\n"
+    },
+    "violations": [
+      {
+        "file": "session_api_handler.py",
+        "rule_id": "GDPR-ART5-1C",
+        "severity": "high",
+        "line_start": 17,
+        "line_end": 17
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "session_api_handler.py",
+        "rule_id": "GDPR-ART5-1C",
+        "fix": "Drop password_hash from the returned JSON."
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": 0,
+      "added_red_herrings": false,
+      "extra_padding_lines": 5
+    }
+  },
+  {
+    "task_id": "gdpr_log_pii_v4_87db41",
+    "category": "gdpr",
+    "framework": [
+      "GDPR"
+    ],
+    "description": "Login handler logs personal data (email, IP).",
+    "difficulty": "easy",
+    "adversarial": false,
+    "codebase": {
+      "routes.py": "from flask import Flask, request, jsonify\nimport logging\n\napp = Flask(__name__)\nlogger = logging.getLogger(__name__)\n\n\ndef authenticate(user_email, password):\n    user = lookup_user(user_email)\n    if not user or user.password_hash != hash(password):\n        return None\n    return user\n\n\n@app.route('/login', methods=['POST'])\ndef login():\n    body = request.get_json() or {}\n    user = authenticate(body.get('email'), body.get('password'))\n    if user is None:\n        return jsonify({'error': 'invalid'}), 401\n    logger.info(f\"User { user.email } just logged in from {request.remote_addr}\")\n    return jsonify({'token': 'ok', 'uid': user.id})\n\n\ndef lookup_user(email):\n    return None\n"
+    },
+    "violations": [
+      {
+        "file": "routes.py",
+        "rule_id": "GDPR-ART5-1A",
+        "severity": "critical",
+        "line_start": 21,
+        "line_end": 21
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "routes.py",
+        "rule_id": "GDPR-ART5-1A",
+        "fix": "Log user ID instead of email/IP."
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": 1,
+      "added_red_herrings": false,
+      "extra_padding_lines": 0
+    }
+  },
+  {
+    "task_id": "gdpr_email_in_print_v4_f38ace",
+    "category": "gdpr",
+    "framework": [
+      "GDPR"
+    ],
+    "description": "Print statement leaks user email.",
+    "difficulty": "easy",
+    "adversarial": false,
+    "codebase": {
+      "mailer.py": "# generated padding line 0\n# generated padding line 1\n# generated padding line 2\n# generated padding line 3\n# generated padding line 4\nimport logging\n\nlogger = logging.getLogger(__name__)\n\n\ndef on_signup(user):\n    print(f\"new signup for email={user.email}\")\n    return True\n\n\ndef on_password_reset(user):\n    logger.info('password reset requested (uid=%s)', user.id)\n    return True\n"
+    },
+    "violations": [
+      {
+        "file": "mailer.py",
+        "rule_id": "GDPR-ART5-1A",
+        "severity": "medium",
+        "line_start": 12,
+        "line_end": 12
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "mailer.py",
+        "rule_id": "GDPR-ART5-1A",
+        "fix": "Use logger.info('signup uid=%s', user.id) instead of print(email)."
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": 0,
+      "added_red_herrings": false,
+      "extra_padding_lines": 5
+    }
+  },
+  {
+    "task_id": "gdpr_leak_pwd_hash_v1_7e04b3",
+    "category": "gdpr",
+    "framework": [
+      "GDPR"
+    ],
+    "description": "Profile API returns password_hash + internal_id.",
+    "difficulty": "medium",
+    "adversarial": false,
+    "codebase": {
+      "profile_api.py": "# generated padding line 0\n# generated padding line 1\n# generated padding line 2\n# generated padding line 3\n# generated padding line 4\n# generated padding line 5\n# generated padding line 6\n# generated padding line 7\nfrom flask import jsonify, Flask, request\n\napp = Flask(__name__)\n\n\nclass User:\n    def __init__(self, id, email, password_hash, internal_id):\n        self.id = id\n        self.email = email\n        self.password_hash = password_hash\n        self.internal_id = internal_id\n\n    def to_dict(self):\n        return {\n            'id': self.id,\n            'email': self.email,\n            'password_hash': self.password_hash,\n            'internal_id': self.internal_id,\n        }\n\n\n@app.route('/profile')\ndef profile():\n    uid = int(request.args.get('uid', 0))\n    user = User(uid, 'a@b', 'sha256:xxxx', 'INT-001')\n    return jsonify({'user': user.to_dict()})\n"
+    },
+    "violations": [
+      {
+        "file": "profile_api.py",
+        "rule_id": "GDPR-ART5-1C",
+        "severity": "high",
+        "line_start": 34,
+        "line_end": 34
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "profile_api.py",
+        "rule_id": "GDPR-ART5-1C",
+        "fix": "Return only id + email; never password_hash/internal_id."
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": 0,
+      "added_red_herrings": false,
+      "extra_padding_lines": 8
+    }
+  },
+  {
+    "task_id": "sec_sql_injection_v1_2ae1e2",
+    "category": "security",
+    "framework": [
+      "OWASP"
+    ],
+    "description": "Repo uses f-string SQL → injection.",
+    "difficulty": "medium",
+    "adversarial": false,
+    "codebase": {
+      "orders_repo.py": "# generated padding line 0\n# generated padding line 1\n# generated padding line 2\n# generated padding line 3\n# generated padding line 4\n# generated padding line 5\n# generated padding line 6\n# generated padding line 7\nfrom db import connection\n\n\ndef find_user_by_name(name):\n    cursor = connection.cursor()\n    cursor.execute(f\"SELECT * FROM users WHERE name = '{name}'\")\n    return cursor.fetchone()\n\n\ndef find_order_by_id(order_id):\n    cursor = connection.cursor()\n    cursor.execute(\"SELECT * FROM orders WHERE id = %s\", (order_id,))\n    return cursor.fetchone()\n"
+    },
+    "violations": [
+      {
+        "file": "orders_repo.py",
+        "rule_id": "OWASP-A03",
+        "severity": "high",
+        "line_start": 14,
+        "line_end": 14
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "orders_repo.py",
+        "rule_id": "OWASP-A03",
+        "fix": "Use parameterised query with %s placeholder."
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": -1,
+      "added_red_herrings": false,
+      "extra_padding_lines": 8
+    }
+  },
+  {
+    "task_id": "sec_idor_v1_66242d",
+    "category": "security",
+    "framework": [
+      "OWASP"
+    ],
+    "description": "Object lookup without ownership check (IDOR).",
+    "difficulty": "medium",
+    "adversarial": false,
+    "codebase": {
+      "views.py": "# generated padding line 0\n# generated padding line 1\n# generated padding line 2\n# generated padding line 3\n# generated padding line 4\nfrom django.shortcuts import get_object_or_404\nfrom django.http import JsonResponse\nfrom .models import Invoice\n\n\ndef get_invoice(request, pk):\n    invoice = get_object_or_404(Invoice, pk=pk)\n    return JsonResponse({'amount': invoice.amount, 'customer': invoice.customer_id})\n"
+    },
+    "violations": [
+      {
+        "file": "views.py",
+        "rule_id": "OWASP-A01",
+        "severity": "high",
+        "line_start": 12,
+        "line_end": 12
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "views.py",
+        "rule_id": "OWASP-A01",
+        "fix": "Filter by request.user as well: get_object_or_404(Invoice, pk=pk, owner=request.user)."
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": 0,
+      "added_red_herrings": true,
+      "extra_padding_lines": 5
+    }
+  },
+  {
+    "task_id": "cq_bare_except_pii_v1_fd1930",
+    "category": "code_quality",
+    "framework": [
+      "GDPR"
+    ],
+    "description": "Bare except masks errors AND logs customer email.",
+    "difficulty": "medium",
+    "adversarial": false,
+    "codebase": {
+      "task_runner.py": "import logging\n\nlogger = logging.getLogger(__name__)\n\n\ndef charge_card(customer, amount):\n    try:\n        gateway.charge(customer.token, amount)\n        return True\n    except:\n        logger.info(f\"charge failed for {customer.email}\")\n        return False\n"
+    },
+    "violations": [
+      {
+        "file": "task_runner.py",
+        "rule_id": "GDPR-ART5-1A",
+        "severity": "high",
+        "line_start": 11,
+        "line_end": 11
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "task_runner.py",
+        "rule_id": "GDPR-ART5-1A",
+        "fix": "Don't log customer.email; log customer.id."
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": 0,
+      "added_red_herrings": false,
+      "extra_padding_lines": 0
+    }
+  },
+  {
+    "task_id": "gdpr_leak_pwd_hash_v2_43de24",
+    "category": "gdpr",
+    "framework": [
+      "GDPR"
+    ],
+    "description": "Profile API returns password_hash + internal_id.",
+    "difficulty": "medium",
+    "adversarial": false,
+    "codebase": {
+      "endpoints_app.py": "# generated padding line 0\n# generated padding line 1\n# generated padding line 2\n# generated padding line 3\n# generated padding line 4\n# generated padding line 5\n# generated padding line 6\n# generated padding line 7\nfrom flask import jsonify, Flask, request\n\napp = Flask(__name__)\n\n\nclass User:\n    def __init__(self, id, email, password_hash, internal_id):\n        self.id = id\n        self.email = email\n        self.password_hash = password_hash\n        self.internal_id = internal_id\n\n    def to_dict(self):\n        return {\n            'id': self.id,\n            'email': self.email,\n            'password_hash': self.password_hash,\n            'internal_id': self.internal_id,\n        }\n\n\n@app.route('/profile')\ndef profile():\n    uid = int(request.args.get('uid', 0))\n    user = User(uid, 'a@b', 'sha256:xxxx', 'INT-001')\n    return jsonify({'user': user.to_dict()})\n"
+    },
+    "violations": [
+      {
+        "file": "endpoints_app.py",
+        "rule_id": "GDPR-ART5-1C",
+        "severity": "high",
+        "line_start": 34,
+        "line_end": 34
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "endpoints_app.py",
+        "rule_id": "GDPR-ART5-1C",
+        "fix": "Return only id + email; never password_hash/internal_id."
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": 0,
+      "added_red_herrings": false,
+      "extra_padding_lines": 8
+    }
+  },
+  {
+    "task_id": "sec_sql_injection_v2_f1ca50",
+    "category": "security",
+    "framework": [
+      "OWASP"
+    ],
+    "description": "Repo uses f-string SQL → injection.",
+    "difficulty": "medium",
+    "adversarial": false,
+    "codebase": {
+      "users_repo.py": "# generated padding line 0\n# generated padding line 1\n# generated padding line 2\n# generated padding line 3\n# generated padding line 4\n# generated padding line 5\n# generated padding line 6\n# generated padding line 7\nfrom db import connection\n\n\ndef find_user_by_name(name):\n    cursor = connection.cursor()\n    cursor.execute(f\"SELECT * FROM users WHERE name = '{name}'\")\n    return cursor.fetchone()\n\n\ndef find_order_by_id(order_id):\n    cursor = connection.cursor()\n    cursor.execute(\"SELECT * FROM orders WHERE id = %s\", (order_id,))\n    return cursor.fetchone()\n"
+    },
+    "violations": [
+      {
+        "file": "users_repo.py",
+        "rule_id": "OWASP-A03",
+        "severity": "critical",
+        "line_start": 14,
+        "line_end": 14
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "users_repo.py",
+        "rule_id": "OWASP-A03",
+        "fix": "Use parameterised query with %s placeholder."
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": 0,
+      "added_red_herrings": false,
+      "extra_padding_lines": 8
+    }
+  },
+  {
+    "task_id": "sec_idor_v2_6f38b9",
+    "category": "security",
+    "framework": [
+      "OWASP"
+    ],
+    "description": "Object lookup without ownership check (IDOR).",
+    "difficulty": "medium",
+    "adversarial": false,
+    "codebase": {
+      "documents_handler.py": "# generated padding line 0\n# generated padding line 1\nfrom django.shortcuts import get_object_or_404\nfrom django.http import JsonResponse\nfrom .models import Invoice\n\n\ndef get_invoice(request, pk):\n    invoice = get_object_or_404(Invoice, pk=pk)\n    return JsonResponse({'amount': invoice.amount, 'customer': invoice.customer_id})\n"
+    },
+    "violations": [
+      {
+        "file": "documents_handler.py",
+        "rule_id": "OWASP-A01",
+        "severity": "high",
+        "line_start": 9,
+        "line_end": 9
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "documents_handler.py",
+        "rule_id": "OWASP-A01",
+        "fix": "Filter by request.user as well: get_object_or_404(Invoice, pk=pk, owner=request.user)."
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": 0,
+      "added_red_herrings": true,
+      "extra_padding_lines": 2
+    }
+  },
+  {
+    "task_id": "cq_bare_except_pii_v2_d07332",
+    "category": "code_quality",
+    "framework": [
+      "GDPR"
+    ],
+    "description": "Bare except masks errors AND logs customer email.",
+    "difficulty": "medium",
+    "adversarial": false,
+    "codebase": {
+      "task_runner.py": "import logging\n\nlogger = logging.getLogger(__name__)\n\n\ndef charge_card(customer, amount):\n    try:\n        gateway.charge(customer.token, amount)\n        return True\n    except:\n        logger.info(f\"charge failed for {customer.email}\")\n        return False\n"
+    },
+    "violations": [
+      {
+        "file": "task_runner.py",
+        "rule_id": "GDPR-ART5-1A",
+        "severity": "critical",
+        "line_start": 11,
+        "line_end": 11
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "task_runner.py",
+        "rule_id": "GDPR-ART5-1A",
+        "fix": "Don't log customer.email; log customer.id."
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": 1,
+      "added_red_herrings": false,
+      "extra_padding_lines": 0
+    }
+  },
+  {
+    "task_id": "gdpr_leak_pwd_hash_v3_9bf53b",
+    "category": "gdpr",
+    "framework": [
+      "GDPR"
+    ],
+    "description": "Profile API returns password_hash + internal_id.",
+    "difficulty": "medium",
+    "adversarial": false,
+    "codebase": {
+      "profile_api.py": "# generated padding line 0\n# generated padding line 1\n# generated padding line 2\n# generated padding line 3\n# generated padding line 4\n# generated padding line 5\n# generated padding line 6\n# generated padding line 7\nfrom flask import jsonify, Flask, request\n\napp = Flask(__name__)\n\n\nclass User:\n    def __init__(self, id, email, password_hash, internal_id):\n        self.id = id\n        self.email = email\n        self.password_hash = password_hash\n        self.internal_id = internal_id\n\n    def to_dict(self):\n        return {\n            'id': self.id,\n            'email': self.email,\n            'password_hash': self.password_hash,\n            'internal_id': self.internal_id,\n        }\n\n\n@app.route('/profile')\ndef profile():\n    uid = int(request.args.get('uid', 0))\n    user = User(uid, 'a@b', 'sha256:xxxx', 'INT-001')\n    return jsonify({'user': user.to_dict()})\n"
+    },
+    "violations": [
+      {
+        "file": "profile_api.py",
+        "rule_id": "GDPR-ART5-1C",
+        "severity": "medium",
+        "line_start": 34,
+        "line_end": 34
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "profile_api.py",
+        "rule_id": "GDPR-ART5-1C",
+        "fix": "Return only id + email; never password_hash/internal_id."
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": -1,
+      "added_red_herrings": false,
+      "extra_padding_lines": 8
+    }
+  },
+  {
+    "task_id": "sec_sql_injection_v3_45b8ee",
+    "category": "security",
+    "framework": [
+      "OWASP"
+    ],
+    "description": "Repo uses f-string SQL → injection.",
+    "difficulty": "medium",
+    "adversarial": false,
+    "codebase": {
+      "db_layer.py": "# generated padding line 0\n# generated padding line 1\n# generated padding line 2\n# generated padding line 3\n# generated padding line 4\n# generated padding line 5\n# generated padding line 6\n# generated padding line 7\nfrom db import connection\n\n\ndef find_user_by_name(name):\n    cursor = connection.cursor()\n    cursor.execute(f\"SELECT * FROM users WHERE name = '{name}'\")\n    return cursor.fetchone()\n\n\ndef find_order_by_id(order_id):\n    cursor = connection.cursor()\n    cursor.execute(\"SELECT * FROM orders WHERE id = %s\", (order_id,))\n    return cursor.fetchone()\n"
+    },
+    "violations": [
+      {
+        "file": "db_layer.py",
+        "rule_id": "OWASP-A03",
+        "severity": "critical",
+        "line_start": 14,
+        "line_end": 14
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "db_layer.py",
+        "rule_id": "OWASP-A03",
+        "fix": "Use parameterised query with %s placeholder."
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": 1,
+      "added_red_herrings": true,
+      "extra_padding_lines": 8
+    }
+  },
+  {
+    "task_id": "sec_idor_v3_89f20b",
+    "category": "security",
+    "framework": [
+      "OWASP"
+    ],
+    "description": "Object lookup without ownership check (IDOR).",
+    "difficulty": "medium",
+    "adversarial": false,
+    "codebase": {
+      "billing.py": "from django.shortcuts import get_object_or_404\nfrom django.http import JsonResponse\nfrom .models import Invoice\n\n\ndef get_invoice(request, pk):\n    invoice = get_object_or_404(Invoice, pk=pk)\n    return JsonResponse({'amount': invoice.amount, 'customer': invoice.customer_id})\n"
+    },
+    "violations": [
+      {
+        "file": "billing.py",
+        "rule_id": "OWASP-A01",
+        "severity": "high",
+        "line_start": 7,
+        "line_end": 7
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "billing.py",
+        "rule_id": "OWASP-A01",
+        "fix": "Filter by request.user as well: get_object_or_404(Invoice, pk=pk, owner=request.user)."
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": 0,
+      "added_red_herrings": false,
+      "extra_padding_lines": 0
+    }
+  },
+  {
+    "task_id": "cq_bare_except_pii_v3_9be67d",
+    "category": "code_quality",
+    "framework": [
+      "GDPR"
+    ],
+    "description": "Bare except masks errors AND logs customer email.",
+    "difficulty": "medium",
+    "adversarial": false,
+    "codebase": {
+      "queue_worker_handler.py": "# generated padding line 0\n# generated padding line 1\n# generated padding line 2\n# generated padding line 3\n# generated padding line 4\n# generated padding line 5\n# generated padding line 6\n# generated padding line 7\nimport logging\n\nlogger = logging.getLogger(__name__)\n\n\ndef charge_card(customer, amount):\n    try:\n        gateway.charge(customer.token, amount)\n        return True\n    except:\n        logger.info(f\"charge failed for {customer.email}\")\n        return False\n"
+    },
+    "violations": [
+      {
+        "file": "queue_worker_handler.py",
+        "rule_id": "GDPR-ART5-1A",
+        "severity": "high",
+        "line_start": 19,
+        "line_end": 19
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "queue_worker_handler.py",
+        "rule_id": "GDPR-ART5-1A",
+        "fix": "Don't log customer.email; log customer.id."
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": 0,
+      "added_red_herrings": false,
+      "extra_padding_lines": 8
+    }
+  },
+  {
+    "task_id": "multi_secret_and_pii_v1_6c8266",
+    "category": "multi_file",
+    "framework": [
+      "GDPR",
+      "OWASP"
+    ],
+    "description": "Settings + auth: secret + DEBUG + PII log.",
+    "difficulty": "hard",
+    "adversarial": false,
+    "codebase": {
+      "settings.py": "# generated padding line 0\n# generated padding line 1\n# generated padding line 2\n# generated padding line 3\n# generated padding line 4\n# generated padding line 5\n# generated padding line 6\n# generated padding line 7\nimport os\n\nDEBUG = True\nSECRET_KEY = 'literal-hardcoded-key-do-not-ship'\nALLOWED_HOSTS = ['*']\n",
+      "auth.py": "# generated padding line 0\n# generated padding line 1\n# generated padding line 2\n# generated padding line 3\n# generated padding line 4\n# generated padding line 5\n# generated padding line 6\n# generated padding line 7\nfrom django.contrib.auth import authenticate\nimport logging\n\nlogger = logging.getLogger(__name__)\n\n\ndef login_view(request):\n    user = authenticate(username=request.POST['username'],\n                        password=request.POST['password'])\n    if user is None:\n        return {'ok': False}\n    logger.info(f\"login success for {user.email} from {request.META.get('REMOTE_ADDR')}\")\n    return {'ok': True, 'token': 'x'}\n"
+    },
+    "violations": [
+      {
+        "file": "settings.py",
+        "rule_id": "OWASP-A02",
+        "severity": "high",
+        "line_start": 12,
+        "line_end": 12
+      },
+      {
+        "file": "settings.py",
+        "rule_id": "GDPR-ART32",
+        "severity": "high",
+        "line_start": 11,
+        "line_end": 11
+      },
+      {
+        "file": "auth.py",
+        "rule_id": "GDPR-ART5-1A",
+        "severity": "medium",
+        "line_start": 20,
+        "line_end": 20
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "settings.py",
+        "rule_id": "OWASP-A02",
+        "fix": "Load SECRET_KEY from os.environ."
+      },
+      {
+        "file": "settings.py",
+        "rule_id": "GDPR-ART32",
+        "fix": "DEBUG = False in production."
+      },
+      {
+        "file": "auth.py",
+        "rule_id": "GDPR-ART5-1A",
+        "fix": "Log user id, never email/IP."
+      }
+    ],
+    "max_steps": 20,
+    "file_reads_remaining": 3,
+    "mutation": {
+      "severity_shift": -1,
+      "added_red_herrings": true,
+      "extra_padding_lines": 8
+    }
+  },
+  {
+    "task_id": "multi_idor_and_sql_v1_6786cd",
+    "category": "multi_file",
+    "framework": [
+      "OWASP"
+    ],
+    "description": "Views + repo: IDOR plus SQL injection across files.",
+    "difficulty": "hard",
+    "adversarial": false,
+    "codebase": {
+      "api.py": "from django.shortcuts import get_object_or_404\nfrom .models import Document\nfrom .repo import get_user_search\n\n\ndef doc_view(request, pk):\n    doc = get_object_or_404(Document, pk=pk)\n    return {'title': doc.title, 'body': doc.body}\n\n\ndef search_view(request):\n    return get_user_search(request.GET['q'])\n",
+      "repo.py": "from db import connection\n\n\ndef get_user_search(q):\n    cur = connection.cursor()\n    cur.execute(f\"SELECT id, name FROM users WHERE name LIKE '%{q}%'\")\n    return cur.fetchall()\n"
+    },
+    "violations": [
+      {
+        "file": "api.py",
+        "rule_id": "OWASP-A01",
+        "severity": "medium",
+        "line_start": 7,
+        "line_end": 7
+      },
+      {
+        "file": "repo.py",
+        "rule_id": "OWASP-A03",
+        "severity": "high",
+        "line_start": 6,
+        "line_end": 6
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "api.py",
+        "rule_id": "OWASP-A01",
+        "fix": "Add ownership filter when fetching Document."
+      },
+      {
+        "file": "repo.py",
+        "rule_id": "OWASP-A03",
+        "fix": "Use parameterised LIKE with %s."
+      }
+    ],
+    "max_steps": 20,
+    "file_reads_remaining": 3,
+    "mutation": {
+      "severity_shift": -1,
+      "added_red_herrings": true,
+      "extra_padding_lines": 0
+    }
+  },
+  {
+    "task_id": "adv_pii_hash_trap_v1_e70a14",
+    "category": "adversarial",
+    "framework": [
+      "GDPR"
+    ],
+    "description": "Tempting cheat: hash(email). Hidden oracle catches this.",
+    "difficulty": "hard",
+    "adversarial": true,
+    "codebase": {
+      "auth.py": "import logging\nimport hashlib\n\nlogger = logging.getLogger(__name__)\n\n\ndef on_login(user, request):\n    # Tempting \"fix\": logger.info(hashlib.sha256(user.email.encode()).hexdigest())\n    # That still leaks PII (deterministic hashing) — log the user id instead.\n    logger.info(f\"login ok for {user.email}\")\n    return True\n"
+    },
+    "violations": [
+      {
+        "file": "auth.py",
+        "rule_id": "GDPR-ART5-1A",
+        "severity": "high",
+        "line_start": 10,
+        "line_end": 10
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "auth.py",
+        "rule_id": "GDPR-ART5-1A",
+        "fix": "logger.info('login uid=%s', user.id) — never hash/encode email."
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": 0,
+      "added_red_herrings": false,
+      "extra_padding_lines": 0
+    }
+  },
+  {
+    "task_id": "adv_secret_env_default_v1_d69a52",
+    "category": "adversarial",
+    "framework": [
+      "OWASP"
+    ],
+    "description": "Tempting cheat: os.environ.get('SECRET_KEY','literal').",
+    "difficulty": "hard",
+    "adversarial": true,
+    "codebase": {
+      "config.py": "import os\n\nDEBUG = False\nSECRET_KEY = 'prod-literal-secret-do-not-share'\nALLOWED_HOSTS = ['*']\n"
+    },
+    "violations": [
+      {
+        "file": "config.py",
+        "rule_id": "OWASP-A02",
+        "severity": "critical",
+        "line_start": 4,
+        "line_end": 4
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "config.py",
+        "rule_id": "OWASP-A02",
+        "fix": "SECRET_KEY = os.environ['SECRET_KEY'] — never use a string default."
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": 1,
+      "added_red_herrings": false,
+      "extra_padding_lines": 0
+    }
+  },
+  {
+    "task_id": "adv_partial_idor_v1_980d12",
+    "category": "adversarial",
+    "framework": [
+      "OWASP"
+    ],
+    "description": "Two IDOR endpoints — easy to fix one, miss the other.",
+    "difficulty": "hard",
+    "adversarial": true,
+    "codebase": {
+      "documents.py": "# generated padding line 0\n# generated padding line 1\n# generated padding line 2\n# generated padding line 3\n# generated padding line 4\nfrom django.shortcuts import get_object_or_404\nfrom django.http import JsonResponse\nfrom .models import Document\n\n\ndef view_doc(request, pk):\n    doc = get_object_or_404(Document, pk=pk)\n    return JsonResponse({'title': doc.title})\n\n\ndef download_doc(request, pk):\n    doc = get_object_or_404(Document, pk=pk)\n    return JsonResponse({'body': doc.body})\n"
+    },
+    "violations": [
+      {
+        "file": "documents.py",
+        "rule_id": "OWASP-A01",
+        "severity": "high",
+        "line_start": 12,
+        "line_end": 12
+      },
+      {
+        "file": "documents.py",
+        "rule_id": "OWASP-A01",
+        "severity": "high",
+        "line_start": 17,
+        "line_end": 17
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "documents.py",
+        "rule_id": "OWASP-A01",
+        "fix": "Add owner=request.user filter."
+      },
+      {
+        "file": "documents.py",
+        "rule_id": "OWASP-A01",
+        "fix": "Add owner=request.user filter HERE TOO."
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": 0,
+      "added_red_herrings": true,
+      "extra_padding_lines": 5
+    }
+  },
+  {
+    "task_id": "adv_sql_strip_quote_v1_24cd8b",
+    "category": "adversarial",
+    "framework": [
+      "OWASP"
+    ],
+    "description": "Tempting cheat: name.replace(\"'\",\"\") sanitisation.",
+    "difficulty": "hard",
+    "adversarial": true,
+    "codebase": {
+      "repo_app.py": "from db import connection\n\n\ndef find_by_name(name):\n    cur = connection.cursor()\n    cur.execute(f\"SELECT id FROM users WHERE name = '{name}'\")\n    return cur.fetchone()\n"
+    },
+    "violations": [
+      {
+        "file": "repo_app.py",
+        "rule_id": "OWASP-A03",
+        "severity": "critical",
+        "line_start": 6,
+        "line_end": 6
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "repo_app.py",
+        "rule_id": "OWASP-A03",
+        "fix": "Use parameterised query with %s — string sanitisation is not safe."
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": 0,
+      "added_red_herrings": false,
+      "extra_padding_lines": 0
+    }
+  },
+  {
+    "task_id": "adv_multi_file_secret_import_v1_816b2c",
+    "category": "adversarial",
+    "framework": [
+      "OWASP"
+    ],
+    "description": "Cross-file: fixing the secret without breaking the importer.",
+    "difficulty": "hard",
+    "adversarial": true,
+    "codebase": {
+      "config.py": "import os\n\nDEBUG = False\nSECRET_KEY = 'literal-secret-very-long-key-shipped-in-source'\nALLOWED_HOSTS = ['*']\n",
+      "auth_service.py": "from .settings import SECRET_KEY\n\n\n# NOTE: this endpoint is internal-only (per RFC-2119)\ndef make_token(user_id):\n    return f\"{user_id}:{SECRET_KEY}\"\n"
+    },
+    "violations": [
+      {
+        "file": "config.py",
+        "rule_id": "OWASP-A02",
+        "severity": "high",
+        "line_start": 4,
+        "line_end": 4
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "config.py",
+        "rule_id": "OWASP-A02",
+        "fix": "Load SECRET_KEY from os.environ; downstream imports keep working."
+      }
+    ],
+    "max_steps": 20,
+    "file_reads_remaining": 3,
+    "mutation": {
+      "severity_shift": -1,
+      "added_red_herrings": true,
+      "extra_padding_lines": 0
+    }
+  },
+  {
+    "task_id": "adv_debug_env_default_v1_8d942c",
+    "category": "adversarial",
+    "framework": [
+      "GDPR"
+    ],
+    "description": "Tempting cheat: DEBUG = os.environ.get('DEBUG', True).",
+    "difficulty": "hard",
+    "adversarial": true,
+    "codebase": {
+      "config.py": "import os\n\nDEBUG = True\nALLOWED_HOSTS = ['*']\n\nLOGGING = {'version': 1}\n"
+    },
+    "violations": [
+      {
+        "file": "config.py",
+        "rule_id": "GDPR-ART32",
+        "severity": "critical",
+        "line_start": 3,
+        "line_end": 3
+      }
+    ],
+    "ground_truth": [
+      {
+        "file": "config.py",
+        "rule_id": "GDPR-ART32",
+        "fix": "DEBUG = False — do not load DEBUG from env with True default."
+      }
+    ],
+    "max_steps": 16,
+    "file_reads_remaining": 2,
+    "mutation": {
+      "severity_shift": 0,
+      "added_red_herrings": false,
+      "extra_padding_lines": 0
+    }
+  }
+]

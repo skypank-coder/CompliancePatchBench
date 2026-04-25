@@ -1,0 +1,42 @@
+{
+  "iterations": 2,
+  "start": {
+    "iteration": 0,
+    "avg_reward": 1.45,
+    "success_rate": 0.875,
+    "hidden_violation_rate": 0.0,
+    "partial_fix_rate": 0.0,
+    "cheat_resistance": 1.0
+  },
+  "end": {
+    "iteration": 1,
+    "avg_reward": 1.625,
+    "success_rate": 1.0,
+    "hidden_violation_rate": 0.0,
+    "partial_fix_rate": 0.0,
+    "cheat_resistance": 1.0
+  },
+  "delta": {
+    "avg_reward": 0.175,
+    "success_rate": 0.125,
+    "hidden_violation_rate": 0.0
+  },
+  "history": [
+    {
+      "iteration": 0,
+      "avg_reward": 1.45,
+      "success_rate": 0.875,
+      "hidden_violation_rate": 0.0,
+      "partial_fix_rate": 0.0,
+      "cheat_resistance": 1.0
+    },
+    {
+      "iteration": 1,
+      "avg_reward": 1.625,
+      "success_rate": 1.0,
+      "hidden_violation_rate": 0.0,
+      "partial_fix_rate": 0.0,
+      "cheat_resistance": 1.0
+    }
+  ]
+}

@@ -7,7 +7,8 @@ description: >
   Agent 2 (Adversary) generates new violations designed to evade the patcher,
   creating a self-improving adversarial loop. Reward is deterministic and
   explicitly anti-cheat: patch deletion is penalized -1.0, verbosity is penalized,
-  and AST-level minimality is rewarded.
+  AST-level minimality is rewarded, and hidden compliance checks penalize
+  shortcut fixes that pass visible tests but still leak data or weaken security.
 
 author: "CompliancePatchBench Team"
 tags:
@@ -69,9 +70,18 @@ reward_structure:
     minimal_patch: +0.2
     verbosity_penalty: "-0.3 per extra line changed"
     deletion_cheat: -1.0
+    hidden_violation_penalty: -0.5
+    partial_fix_penalty: -0.25
+    timeout_penalty: -0.10
   adversary_agent:
     evades_patcher: +1.0
     trivially_detectable: -0.5
+
+safety:
+  max_steps: "Each task has a fixed step limit; max-step termination is penalized."
+  file_budget: "Read budgets limit unrestricted codebase scanning."
+  anti_cheat: "Visible CI, semantic validation, deletion checks, and a hidden oracle are independent reward signals."
+  execution: "Patch CI uses static/syntax checks rather than executing untrusted generated code."
 
 endpoints:
   health: "GET /health"

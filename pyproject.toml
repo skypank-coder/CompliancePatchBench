@@ -1,7 +1,7 @@
 [project]
-name = "regaudit-benchmark"
+name = "compliancepatchbench"
 version = "0.1.0"
-description = "RegAuditBench"
+description = "Non-cheatable compliance patching benchmark with SFT and RL self-improvement"
 readme = "README.md"
 requires-python = ">=3.10"
 
@@ -9,8 +9,7 @@ dependencies = [
     "fastapi",
     "uvicorn",
     "pydantic",
-    "requests",
-    "openenv>=0.1.13"
+    "requests"
 ]
 
 [project.scripts]
@@ -18,3 +17,6 @@ server = "server.app:main"
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+filterwarnings = [
+    "ignore:Please use `import python_multipart` instead\\.:PendingDeprecationWarning:starlette\\.formparsers"
+]

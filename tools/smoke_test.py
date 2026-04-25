@@ -11,6 +11,9 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# This file is an executable smoke script, not a pytest test module.
+__test__ = False
+
 from environment.env import RegAuditEnv
 from environment.patch_env import CompliancePatchEnv, CISandbox, compute_patch_reward
 from environment.models import (

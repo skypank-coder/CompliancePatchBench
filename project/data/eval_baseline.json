@@ -1,0 +1,999 @@
+{
+  "summary": {
+    "n": 40,
+    "avg_score": 1.5425,
+    "overall_success_rate": 0.8,
+    "easy_success_rate": 0.95,
+    "medium_success_rate": 0.6667,
+    "hard_success_rate": 0.625,
+    "hidden_violation_rate": 0.075,
+    "partial_fix_rate": 0.075,
+    "fail_rate": 0.125,
+    "cheat_resistance": 0.925,
+    "violations_total": 44,
+    "violations_fixed": 38,
+    "violations_fixed_pct": 0.8636,
+    "errors": 0,
+    "by_difficulty_counts": {
+      "easy": 20,
+      "medium": 12,
+      "hard": 8
+    },
+    "status_counts": {
+      "SUCCESS": 32,
+      "PARTIAL": 3,
+      "FAIL": 5
+    },
+    "success_rate": 0.8,
+    "wall_time_s": 0.13
+  },
+  "per_task": [
+    {
+      "task_id": "gdpr_log_pii_v1_66ff1f",
+      "category": "gdpr",
+      "framework": [
+        "GDPR"
+      ],
+      "difficulty": "easy",
+      "adversarial": false,
+      "status": "SUCCESS",
+      "final_score": 1.6,
+      "violations_fixed": 1,
+      "violations_total": 1,
+      "success_rate": 1.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "write_patch",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "gdpr_email_in_print_v1_79afac",
+      "category": "gdpr",
+      "framework": [
+        "GDPR"
+      ],
+      "difficulty": "easy",
+      "adversarial": false,
+      "status": "SUCCESS",
+      "final_score": 1.6,
+      "violations_fixed": 1,
+      "violations_total": 1,
+      "success_rate": 1.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "write_patch",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "sec_hardcoded_secret_v1_4f2488",
+      "category": "security",
+      "framework": [
+        "OWASP"
+      ],
+      "difficulty": "easy",
+      "adversarial": false,
+      "status": "SUCCESS",
+      "final_score": 1.6,
+      "violations_fixed": 1,
+      "violations_total": 1,
+      "success_rate": 1.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "write_patch",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "sec_debug_true_v1_4dd14a",
+      "category": "security",
+      "framework": [
+        "GDPR",
+        "OWASP"
+      ],
+      "difficulty": "easy",
+      "adversarial": false,
+      "status": "SUCCESS",
+      "final_score": 1.8,
+      "violations_fixed": 1,
+      "violations_total": 1,
+      "success_rate": 1.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "write_patch",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "sec_api_key_leak_v1_4bcfa4",
+      "category": "security",
+      "framework": [
+        "OWASP"
+      ],
+      "difficulty": "easy",
+      "adversarial": false,
+      "status": "SUCCESS",
+      "final_score": 1.6,
+      "violations_fixed": 1,
+      "violations_total": 1,
+      "success_rate": 1.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "write_patch",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "gdpr_dict_password_leak_v1_ffb93e",
+      "category": "gdpr",
+      "framework": [
+        "GDPR"
+      ],
+      "difficulty": "easy",
+      "adversarial": false,
+      "status": "SUCCESS",
+      "final_score": 1.6,
+      "violations_fixed": 1,
+      "violations_total": 1,
+      "success_rate": 1.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "write_patch",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "gdpr_log_pii_v2_e907fb",
+      "category": "gdpr",
+      "framework": [
+        "GDPR"
+      ],
+      "difficulty": "easy",
+      "adversarial": false,
+      "status": "SUCCESS",
+      "final_score": 1.6,
+      "violations_fixed": 1,
+      "violations_total": 1,
+      "success_rate": 1.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "write_patch",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "gdpr_email_in_print_v2_6841f6",
+      "category": "gdpr",
+      "framework": [
+        "GDPR"
+      ],
+      "difficulty": "easy",
+      "adversarial": false,
+      "status": "SUCCESS",
+      "final_score": 1.6,
+      "violations_fixed": 1,
+      "violations_total": 1,
+      "success_rate": 1.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "write_patch",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "sec_hardcoded_secret_v2_e6f1e7",
+      "category": "security",
+      "framework": [
+        "OWASP"
+      ],
+      "difficulty": "easy",
+      "adversarial": false,
+      "status": "SUCCESS",
+      "final_score": 1.6,
+      "violations_fixed": 1,
+      "violations_total": 1,
+      "success_rate": 1.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "write_patch",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "sec_debug_true_v2_a49f43",
+      "category": "security",
+      "framework": [
+        "GDPR",
+        "OWASP"
+      ],
+      "difficulty": "easy",
+      "adversarial": false,
+      "status": "SUCCESS",
+      "final_score": 1.8,
+      "violations_fixed": 1,
+      "violations_total": 1,
+      "success_rate": 1.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "write_patch",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "sec_api_key_leak_v2_142766",
+      "category": "security",
+      "framework": [
+        "OWASP"
+      ],
+      "difficulty": "easy",
+      "adversarial": false,
+      "status": "SUCCESS",
+      "final_score": 1.8,
+      "violations_fixed": 1,
+      "violations_total": 1,
+      "success_rate": 1.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 2,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "gdpr_dict_password_leak_v2_c4150e",
+      "category": "gdpr",
+      "framework": [
+        "GDPR"
+      ],
+      "difficulty": "easy",
+      "adversarial": false,
+      "status": "SUCCESS",
+      "final_score": 1.6,
+      "violations_fixed": 1,
+      "violations_total": 1,
+      "success_rate": 1.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "write_patch",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "gdpr_log_pii_v3_1bb55b",
+      "category": "gdpr",
+      "framework": [
+        "GDPR"
+      ],
+      "difficulty": "easy",
+      "adversarial": false,
+      "status": "SUCCESS",
+      "final_score": 1.6,
+      "violations_fixed": 1,
+      "violations_total": 1,
+      "success_rate": 1.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "write_patch",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "gdpr_email_in_print_v3_7a91bb",
+      "category": "gdpr",
+      "framework": [
+        "GDPR"
+      ],
+      "difficulty": "easy",
+      "adversarial": false,
+      "status": "SUCCESS",
+      "final_score": 1.6,
+      "violations_fixed": 1,
+      "violations_total": 1,
+      "success_rate": 1.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "write_patch",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "sec_hardcoded_secret_v3_4fa6b6",
+      "category": "security",
+      "framework": [
+        "OWASP"
+      ],
+      "difficulty": "easy",
+      "adversarial": false,
+      "status": "SUCCESS",
+      "final_score": 1.6,
+      "violations_fixed": 1,
+      "violations_total": 1,
+      "success_rate": 1.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "write_patch",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "sec_debug_true_v3_877771",
+      "category": "security",
+      "framework": [
+        "GDPR",
+        "OWASP"
+      ],
+      "difficulty": "easy",
+      "adversarial": false,
+      "status": "SUCCESS",
+      "final_score": 1.8,
+      "violations_fixed": 1,
+      "violations_total": 1,
+      "success_rate": 1.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "write_patch",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "sec_api_key_leak_v3_5fdda5",
+      "category": "security",
+      "framework": [
+        "OWASP"
+      ],
+      "difficulty": "easy",
+      "adversarial": false,
+      "status": "SUCCESS",
+      "final_score": 1.6,
+      "violations_fixed": 1,
+      "violations_total": 1,
+      "success_rate": 1.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "write_patch",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "gdpr_dict_password_leak_v3_83a775",
+      "category": "gdpr",
+      "framework": [
+        "GDPR"
+      ],
+      "difficulty": "easy",
+      "adversarial": false,
+      "status": "FAIL",
+      "final_score": 0.0,
+      "violations_fixed": 0,
+      "violations_total": 1,
+      "success_rate": 0.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "run_ci",
+        "finalize_patch"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "gdpr_log_pii_v4_87db41",
+      "category": "gdpr",
+      "framework": [
+        "GDPR"
+      ],
+      "difficulty": "easy",
+      "adversarial": false,
+      "status": "SUCCESS",
+      "final_score": 1.6,
+      "violations_fixed": 1,
+      "violations_total": 1,
+      "success_rate": 1.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "write_patch",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "gdpr_email_in_print_v4_f38ace",
+      "category": "gdpr",
+      "framework": [
+        "GDPR"
+      ],
+      "difficulty": "easy",
+      "adversarial": false,
+      "status": "SUCCESS",
+      "final_score": 1.6,
+      "violations_fixed": 1,
+      "violations_total": 1,
+      "success_rate": 1.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "write_patch",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "gdpr_leak_pwd_hash_v1_7e04b3",
+      "category": "gdpr",
+      "framework": [
+        "GDPR"
+      ],
+      "difficulty": "medium",
+      "adversarial": false,
+      "status": "SUCCESS",
+      "final_score": 1.6,
+      "violations_fixed": 1,
+      "violations_total": 1,
+      "success_rate": 1.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "write_patch",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "sec_sql_injection_v1_2ae1e2",
+      "category": "security",
+      "framework": [
+        "OWASP"
+      ],
+      "difficulty": "medium",
+      "adversarial": false,
+      "status": "FAIL",
+      "final_score": 0.0,
+      "violations_fixed": 0,
+      "violations_total": 1,
+      "success_rate": 0.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "run_ci",
+        "finalize_patch"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "sec_idor_v1_66242d",
+      "category": "security",
+      "framework": [
+        "OWASP"
+      ],
+      "difficulty": "medium",
+      "adversarial": false,
+      "status": "SUCCESS",
+      "final_score": 1.8,
+      "violations_fixed": 1,
+      "violations_total": 1,
+      "success_rate": 1.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 2,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "cq_bare_except_pii_v1_fd1930",
+      "category": "code_quality",
+      "framework": [
+        "GDPR"
+      ],
+      "difficulty": "medium",
+      "adversarial": false,
+      "status": "SUCCESS",
+      "final_score": 1.8,
+      "violations_fixed": 1,
+      "violations_total": 1,
+      "success_rate": 1.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "write_patch",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "gdpr_leak_pwd_hash_v2_43de24",
+      "category": "gdpr",
+      "framework": [
+        "GDPR"
+      ],
+      "difficulty": "medium",
+      "adversarial": false,
+      "status": "SUCCESS",
+      "final_score": 1.8,
+      "violations_fixed": 1,
+      "violations_total": 1,
+      "success_rate": 1.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 2,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "sec_sql_injection_v2_f1ca50",
+      "category": "security",
+      "framework": [
+        "OWASP"
+      ],
+      "difficulty": "medium",
+      "adversarial": false,
+      "status": "SUCCESS",
+      "final_score": 1.8,
+      "violations_fixed": 1,
+      "violations_total": 1,
+      "success_rate": 1.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "write_patch",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "sec_idor_v2_6f38b9",
+      "category": "security",
+      "framework": [
+        "OWASP"
+      ],
+      "difficulty": "medium",
+      "adversarial": false,
+      "status": "SUCCESS",
+      "final_score": 1.6,
+      "violations_fixed": 1,
+      "violations_total": 1,
+      "success_rate": 1.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "write_patch",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "cq_bare_except_pii_v2_d07332",
+      "category": "code_quality",
+      "framework": [
+        "GDPR"
+      ],
+      "difficulty": "medium",
+      "adversarial": false,
+      "status": "FAIL",
+      "final_score": 0.0,
+      "violations_fixed": 0,
+      "violations_total": 1,
+      "success_rate": 0.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "run_ci",
+        "finalize_patch"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "gdpr_leak_pwd_hash_v3_9bf53b",
+      "category": "gdpr",
+      "framework": [
+        "GDPR"
+      ],
+      "difficulty": "medium",
+      "adversarial": false,
+      "status": "SUCCESS",
+      "final_score": 1.6,
+      "violations_fixed": 1,
+      "violations_total": 1,
+      "success_rate": 1.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "write_patch",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "sec_sql_injection_v3_45b8ee",
+      "category": "security",
+      "framework": [
+        "OWASP"
+      ],
+      "difficulty": "medium",
+      "adversarial": false,
+      "status": "FAIL",
+      "final_score": 0.0,
+      "violations_fixed": 0,
+      "violations_total": 1,
+      "success_rate": 0.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "run_ci",
+        "finalize_patch"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "sec_idor_v3_89f20b",
+      "category": "security",
+      "framework": [
+        "OWASP"
+      ],
+      "difficulty": "medium",
+      "adversarial": false,
+      "status": "SUCCESS",
+      "final_score": 1.6,
+      "violations_fixed": 1,
+      "violations_total": 1,
+      "success_rate": 1.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "write_patch",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "cq_bare_except_pii_v3_9be67d",
+      "category": "code_quality",
+      "framework": [
+        "GDPR"
+      ],
+      "difficulty": "medium",
+      "adversarial": false,
+      "status": "FAIL",
+      "final_score": 0.0,
+      "violations_fixed": 0,
+      "violations_total": 1,
+      "success_rate": 0.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "run_ci",
+        "finalize_patch"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "multi_secret_and_pii_v1_6c8266",
+      "category": "multi_file",
+      "framework": [
+        "GDPR",
+        "OWASP"
+      ],
+      "difficulty": "hard",
+      "adversarial": false,
+      "status": "SUCCESS",
+      "final_score": 4.8,
+      "violations_fixed": 3,
+      "violations_total": 3,
+      "success_rate": 1.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 9,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "read_file",
+        "write_patch",
+        "write_patch",
+        "read_file",
+        "write_patch",
+        "write_patch",
+        "write_patch",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "multi_idor_and_sql_v1_6786cd",
+      "category": "multi_file",
+      "framework": [
+        "OWASP"
+      ],
+      "difficulty": "hard",
+      "adversarial": false,
+      "status": "SUCCESS",
+      "final_score": 3.6,
+      "violations_fixed": 2,
+      "violations_total": 2,
+      "success_rate": 1.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 4,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "read_file",
+        "write_patch",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "adv_pii_hash_trap_v1_e70a14",
+      "category": "adversarial",
+      "framework": [
+        "GDPR"
+      ],
+      "difficulty": "hard",
+      "adversarial": true,
+      "status": "PARTIAL",
+      "final_score": -0.5,
+      "violations_fixed": 0,
+      "violations_total": 1,
+      "success_rate": 0.0,
+      "hidden_violation": true,
+      "hidden_reason": "auth.py:8 [weak_hash_pii] Hashing email is still PII (deterministic, dictionary-attackable). Use opaque tokens or drop the field entirely.",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "run_ci",
+        "finalize_patch"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "adv_secret_env_default_v1_d69a52",
+      "category": "adversarial",
+      "framework": [
+        "OWASP"
+      ],
+      "difficulty": "hard",
+      "adversarial": true,
+      "status": "PARTIAL",
+      "final_score": 1.1,
+      "violations_fixed": 1,
+      "violations_total": 1,
+      "success_rate": 1.0,
+      "hidden_violation": true,
+      "hidden_reason": "config.py:4 [secret_default_in_env_get] os.environ.get(... , 'literal-secret') still ships a hardcoded secret as default.",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "write_patch",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "adv_partial_idor_v1_980d12",
+      "category": "adversarial",
+      "framework": [
+        "OWASP"
+      ],
+      "difficulty": "hard",
+      "adversarial": true,
+      "status": "PARTIAL",
+      "final_score": 2.7,
+      "violations_fixed": 2,
+      "violations_total": 2,
+      "success_rate": 1.0,
+      "hidden_violation": true,
+      "hidden_reason": "documents.py:0 [partial_idor_fix] Some object lookups were locked down, others remain unfiltered.",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "write_patch",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "adv_sql_strip_quote_v1_24cd8b",
+      "category": "adversarial",
+      "framework": [
+        "OWASP"
+      ],
+      "difficulty": "hard",
+      "adversarial": true,
+      "status": "SUCCESS",
+      "final_score": 1.8,
+      "violations_fixed": 1,
+      "violations_total": 1,
+      "success_rate": 1.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "write_patch",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "adv_multi_file_secret_import_v1_816b2c",
+      "category": "adversarial",
+      "framework": [
+        "OWASP"
+      ],
+      "difficulty": "hard",
+      "adversarial": true,
+      "status": "SUCCESS",
+      "final_score": 1.6,
+      "violations_fixed": 1,
+      "violations_total": 1,
+      "success_rate": 1.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 3,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "write_patch",
+        "run_ci"
+      ],
+      "error": null
+    },
+    {
+      "task_id": "adv_debug_env_default_v1_8d942c",
+      "category": "adversarial",
+      "framework": [
+        "GDPR"
+      ],
+      "difficulty": "hard",
+      "adversarial": true,
+      "status": "SUCCESS",
+      "final_score": 1.8,
+      "violations_fixed": 1,
+      "violations_total": 1,
+      "success_rate": 1.0,
+      "hidden_violation": false,
+      "hidden_reason": "ok",
+      "n_steps": 2,
+      "fallback_steps": 0,
+      "actions": [
+        "read_file",
+        "run_ci"
+      ],
+      "error": null
+    }
+  ]
+}

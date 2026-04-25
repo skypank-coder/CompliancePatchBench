@@ -1,9 +1,12 @@
+from pathlib import Path
 from typing import Optional
 
+import json
+import logging
 import os
 import time
 import uuid
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, TypeAdapter, ValidationError
@@ -15,7 +18,19 @@ from environment.tasks.task1_single_file import get_task as get_task1
 from environment.tasks.task2_django_app import get_task as get_task2
 from environment.tasks.task3_microservices import get_task as get_task3
 
-app = FastAPI(title="RegAudit OpenEnv", version="1.0.0")
+APP_VERSION = "1.0.0"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_DATA = REPO_ROOT / "project" / "data"
+LOGGER = logging.getLogger("compliancepatchbench.api")
+
+app = FastAPI(
+    title="CompliancePatchBench",
+    version=APP_VERSION,
+    description=(
+        "Non-cheatable compliance/security patching benchmark with hidden "
+        "constraints, adversarial tasks, SFT, and RL self-improvement."
+    ),
+)
 ACTION_ADAPTER = TypeAdapter(Action)
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -24,8 +39,12 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 @app.get("/")
 def root():
     return {
-        "status": "RegAudit OpenEnv is running",
+        "status": "CompliancePatchBench is running",
+        "why_it_matters": "AI systems can pass tests and still be wrong.",
+        "key_idea": "Shortcut fixes are penalized by hidden constraints.",
         "health": "/health",
+        "project": "/project",
+        "rl_learning_curve": "/rl/learning-curve",
         "tasks": "/tasks",
         "benchmark": "/benchmark",
         "reset": "/reset",
@@ -56,7 +75,7 @@ TASK_METADATA = [
 
 
 class ResetRequest(BaseModel):
-    task_id: str
+    task_id: str = "task1_single_file"
     seed: int = 42
     session_id: Optional[str] = None
 
@@ -69,11 +88,67 @@ class StepRequest(BaseModel):
 class LeaderboardSubmitRequest(BaseModel):
     session_id: str
     model_name: str
+    model_config = {"protected_namespaces": ()}
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "version": "1.0.0"}
+    return {"status": "ok", "version": APP_VERSION, "service": "CompliancePatchBench"}
+
+
+def _read_json_if_exists(path: Path, default):
+    if not path.exists():
+        return default
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return default
+
+
+@app.get("/project")
+def project_summary():
+    learning_curve = _read_json_if_exists(PROJECT_DATA / "learning_curve.json", [])
+    latest = learning_curve[-1] if learning_curve else None
+    return {
+        "name": "CompliancePatchBench",
+        "summary": "Self-improving compliance/security patching benchmark.",
+        "core_claim": (
+            "The agent does not just learn to fix code; it learns to avoid "
+            "cheating because hidden violations reduce reward."
+        ),
+        "pipeline": ["heuristic", "SFT", "RL fine-tuning"],
+        "rl": {
+            "state": "environment observation: files, violations, CI state, history",
+            "action": "structured JSON actions",
+            "reward": "CI/tests/patch quality minus hidden-violation and partial-fix penalties",
+            "credit_assignment": "reward-to-go",
+            "exploration": "stochastic during RL, deterministic during evaluation",
+        },
+        "latest_learning_curve_point": latest,
+        "endpoints": {
+            "health": "/health",
+            "tasks": "/tasks",
+            "benchmark": "/benchmark",
+            "rl_learning_curve": "/rl/learning-curve",
+            "patch_reset": "/patch/reset",
+            "patch_step": "/patch/step",
+        },
+    }
+
+
+@app.get("/rl/learning-curve")
+def rl_learning_curve():
+    curve = _read_json_if_exists(PROJECT_DATA / "learning_curve.json", [])
+    policy = _read_json_if_exists(PROJECT_DATA / "tabular_rl_policy.json", {})
+    return {
+        "learning_curve": curve,
+        "tabular_policy_buckets": len((policy or {}).get("q", {})) if isinstance(policy, dict) else 0,
+        "note": (
+            "Curves show reward, success, and hidden-violation rate by RL iteration. "
+            "The loop is designed to scale; demo runs may use a small subset for runtime."
+        ),
+    }
 
 
 @app.get("/tasks")
@@ -84,7 +159,10 @@ def get_tasks():
 @app.get("/benchmark")
 def get_benchmark():
     return {
-        "environment": "regaudit",
+        "environment": "compliancepatchbench",
+        "non_cheatable": True,
+        "hidden_constraints": True,
+        "self_learning": ["SFT", "tabular RL", "LoRA policy-gradient RL"],
         "tasks": [
             {
                 "task_id": "task1_single_file",
@@ -209,7 +287,7 @@ class PatchStepRequest(BaseModel):
 
 @app.post("/patch/reset")
 def patch_reset(request: PatchResetRequest):
-    """Start a patch episode using RegAudit task fixtures."""
+    """Start a patch episode using benchmark task fixtures."""
     session_id = request.session_id or str(uuid.uuid4())
     task_config = TASK_LOADERS.get(request.task_id)
     if not task_config:
@@ -233,9 +311,20 @@ def patch_step(request: PatchStepRequest):
     env = PATCH_SESSIONS[request.session_id]
     try:
         obs, reward, done, info = env.step(request.action)
-        return {"observation": obs, "reward": reward, "done": done, "info": info}
+        reward_breakdown = (info.get("critique", {}) or {}).get("reward_breakdown", {})
+        return {
+            "observation": obs,
+            "reward": reward if isinstance(reward, dict) else {
+                "value": reward,
+                "cumulative": obs.get("cumulative_reward", reward),
+                "breakdown": reward_breakdown,
+            },
+            "done": done,
+            "info": info,
+        }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        LOGGER.exception("Patch step failed")
+        raise HTTPException(status_code=500, detail="Patch step failed") from e
 
 
 @app.get("/patch/state")
@@ -246,8 +335,9 @@ def patch_state(session_id: str = Query(...)):
 
 
 @app.exception_handler(Exception)
-async def global_exception_handler(request, exc):
-    return JSONResponse(status_code=500, content={"error": "Internal server error", "detail": str(exc)})
+async def global_exception_handler(request: Request, exc: Exception):
+    LOGGER.exception("Unhandled error for %s", request.url.path)
+    return JSONResponse(status_code=500, content={"error": "Internal server error"})
 
 
 if __name__ == "__main__":

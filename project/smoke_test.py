@@ -57,9 +57,7 @@ def main() -> None:
         assert key in transition, f"Missing RL transition key: {key}"
 
     print("competition smoke test passed")
-    print(f"Iter {curve[0]['iteration']} -> reward {curve[0]['avg_reward']:.3f}, success {curve[0]['success_rate']:.0%}")
-    print(f"Iter {curve[-1]['iteration']} -> reward {curve[-1]['avg_reward']:.3f}, success {curve[-1]['success_rate']:.0%}")
-    print(f"Hidden violations: {curve[0]['hidden_violation_rate']:.1%} -> {curve[-1]['hidden_violation_rate']:.1%}")
+    # `train_rl` already printed Success / Hidden lines above.
 
 
 if __name__ == "__main__":

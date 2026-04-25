@@ -162,7 +162,7 @@ def get_benchmark():
         "environment": "compliancepatchbench",
         "non_cheatable": True,
         "hidden_constraints": True,
-        "self_learning": ["SFT", "tabular RL", "LoRA policy-gradient RL"],
+        "policy_optimization": ["heuristic baseline", "SFT initialization", "TRL GRPO"],
         "tasks": [
             {
                 "task_id": "task1_single_file",

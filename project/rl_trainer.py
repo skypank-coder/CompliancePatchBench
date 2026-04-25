@@ -2,7 +2,7 @@
 rl_trainer.py
 =============
 
-True RL self-improvement loop for CompliancePatchBench.
+Online RL policy optimization loop for CompliancePatchBench.
 
 RL formulation
 --------------
@@ -23,12 +23,14 @@ Episode:
     One task rollout until `done=True` or `max_steps`.
 
 Each saved transition is `(state, action, reward, next_state, logprob, done)`.
-The trainer computes reward-to-go advantages and optimizes the policy to
-increase the log-probability of high-advantage actions.
+For final policy optimization, TRL's `GRPOTrainer` samples completions from the
+current policy, executes those actions in `CompliancePatchEnv`, computes reward,
+and immediately updates that same policy.
 
 Implementation note for judges:
-    We use tabular RL as a lightweight policy-improvement mechanism for
-    discrete patch decisions, and neural policy-gradient RL (LoRA) for scaling.
+    We use heuristic/tabular rollouts only for initial data collection,
+    baseline, and CPU dry-runs. Final policy optimization is performed with
+    GRPO via TRL.
     The agent doesn't just learn to fix code — it learns to avoid cheating,
     because the environment penalizes hidden violations.
 """
@@ -36,6 +38,7 @@ Implementation note for judges:
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
 import math
 import random
@@ -48,6 +51,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from environment.patch_env import CompliancePatchEnv  # noqa: E402
 
 from .agent import (
+    GENERATION_MAX_NEW_TOKENS,
+    STOP_TOKENS,
     AgentConfig,
     RULE_PATCHES,
     RULE_PATCHES_CHEAT,
@@ -56,6 +61,7 @@ from .agent import (
     _ci_runs_seen,
     _patches_seen,
     _read_files_seen,
+    align_causal_lm_and_tokenizer,
     make_heuristic_backend,
     make_hf_pipeline_backend,
 )
@@ -80,6 +86,11 @@ log = get_logger("rl_trainer")
 RL_ADAPTER_DIR = DATA_DIR / "rl_adapter"
 DEFAULT_RL_BASE_MODEL = "unsloth/mistral-7b-instruct-v0.3-bnb-4bit"
 DEFAULT_SFT_ADAPTER_DIR = DATA_DIR / "lora_adapter"
+
+
+def _clip_reward(value: float) -> float:
+    """Keep GRPO rewards bounded so outliers do not dominate updates."""
+    return max(min(float(value), 1.5), -1.0)
 
 
 def _split_tasks(tasks: List[Dict[str, Any]], seed: int, train_fraction: float = 0.75) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
@@ -145,19 +156,19 @@ class RLConfig:
     base_model: str = DEFAULT_RL_BASE_MODEL
     sft_adapter_dir: str = str(DEFAULT_SFT_ADAPTER_DIR)
     output_dir: str = str(RL_ADAPTER_DIR)
-    iterations: int = 3
+    iterations: int = 45
     rollouts_per_task: int = 1
     epochs_per_iteration: int = 1
     batch_size: int = 2
     grad_accum: int = 4
-    learning_rate: float = 1e-5
+    learning_rate: float = 2e-5
     gamma: float = 1.0
-    max_steps: int = 12
+    max_steps: int = 8
     max_seq_length: int = 4096
-    max_tasks: int = 0
+    max_tasks: int = 20
     seed: int = 42
     dry_run: bool = False
-    use_tabular_rl: bool = True
+    use_tabular_rl: bool = False
     tabular_alpha: float = 0.45
     tabular_epsilon: float = 0.20
     exploration_temperature: float = 0.30
@@ -289,6 +300,7 @@ class TabularPatchPolicy:
                 reward -= 0.5
             if result.violations_fixed == 0:
                 reward -= 0.2
+            reward = _clip_reward(reward)
             for d in decisions:
                 bucket = self.q.setdefault(d["key"], {})
                 old = bucket.get(d["choice"], 0.0)
@@ -354,6 +366,210 @@ def load_rl_transitions(path: str, gamma: float = 1.0) -> List[Dict[str, Any]]:
     return transitions
 
 
+# ─── GRPO helpers ─────────────────────────────────────────────────────────────
+
+ALLOWED_ACTIONS = {"read_file", "write_patch", "run_ci", "finalize_patch"}
+
+
+def _json_actions_from_completion(completion: str) -> List[Dict[str, Any]]:
+    """Extract JSON action objects from a model completion."""
+    decoder = json.JSONDecoder()
+    actions: List[Dict[str, Any]] = []
+    idx = 0
+    while idx < len(completion):
+        start = completion.find("{", idx)
+        if start == -1:
+            break
+        try:
+            obj, end = decoder.raw_decode(completion[start:])
+        except json.JSONDecodeError:
+            idx = start + 1
+            continue
+        idx = start + end
+        if isinstance(obj, dict) and obj.get("action_type") in ALLOWED_ACTIONS:
+            actions.append({k: v for k, v in obj.items() if not str(k).startswith("_")})
+    return actions
+
+
+def _truncate_at_stop_token(text: str, stop_tokens: List[str] = STOP_TOKENS) -> str:
+    """Mirror stop-token behavior for backends that do not support it natively."""
+    earliest: Optional[int] = None
+    token_len = 0
+    for token in stop_tokens:
+        idx = text.find(token)
+        if idx != -1 and (earliest is None or idx < earliest):
+            earliest = idx
+            token_len = len(token)
+    if earliest is None:
+        return text
+    return text[: earliest + token_len]
+
+
+def _task_to_grpo_prompt(task: Dict[str, Any]) -> str:
+    """Prompt used by TRL GRPOTrainer for online environment rollouts."""
+    return (
+        SYSTEM_PROMPT
+        + "\n\nTask JSON:\n"
+        + json.dumps({
+            "task_id": task["task_id"],
+            "codebase": task["codebase"],
+            "violations": task["violations"],
+            "difficulty": task.get("difficulty"),
+            "adversarial": task.get("adversarial", False),
+        }, indent=2)
+        + '\n\nReturn JSON actions only. End with {"action_type":"finalize_patch"}.'
+    )
+
+
+def _grpo_reward_factory(component_log: List[Dict[str, float]], health_log: List[Dict[str, float]]):
+    """Build a TRL reward function that executes completions in CompliancePatchEnv."""
+    from .agent import decompose_reward_breakdown
+
+    def _reward(completions, task_payload=None, **kwargs) -> List[float]:
+        payloads = task_payload or kwargs.get("task", [])
+        rewards: List[float] = []
+        for completion, payload in zip(completions, payloads):
+            completion = _truncate_at_stop_token(str(completion))
+            health_log.append({
+                "length": float(len(completion)),
+                "terminated": 1.0 if completion.rstrip().endswith(tuple(STOP_TOKENS)) else 0.0,
+            })
+            task = json.loads(payload) if isinstance(payload, str) else payload
+            actions = _json_actions_from_completion(completion)
+            if not actions:
+                component_log.append({
+                    "reward_ci": 0.0,
+                    "reward_minimal": 0.0,
+                    "reward_regression": 0.0,
+                    "reward_penalty": -0.3,
+                })
+                rewards.append(-0.3)
+                continue
+
+            env = CompliancePatchEnv()
+            env.reset(
+                task_id=task["task_id"],
+                codebase=task["codebase"],
+                violations=task["violations"],
+                max_steps=task.get("max_steps", 12),
+                file_reads_remaining=task.get("file_reads_remaining", 5),
+            )
+            final_score = -1.0
+            final_info: Dict[str, Any] = {}
+            try:
+                done = False
+                for action in actions[:12]:
+                    obs, reward, done, info = env.step(action)
+                    final_score = float(info.get("final_score", reward))
+                    final_info = info
+                    if done or action.get("action_type") == "finalize_patch":
+                        break
+                if not done:
+                    obs, reward, done, info = env.step({"action_type": "finalize_patch"})
+                    final_score = float(info.get("final_score", reward))
+                    final_info = info
+            except Exception:
+                final_score = -1.0
+                final_info = {"critique": {"reward_breakdown": {"execution_error_penalty": -1.0}}}
+
+            breakdown = (final_info.get("critique", {}) or {}).get("reward_breakdown", {})
+            component_log.append(decompose_reward_breakdown(breakdown))
+            rewards.append(_clip_reward(final_score))
+        return rewards
+
+    return _reward
+
+
+def _generation_health_from_completions(rows: List[Dict[str, float]]) -> Dict[str, float]:
+    if not rows:
+        return {"mean_length": 0.0, "terminated_length": 0.0}
+    mean_length = sum(r.get("length", 0.0) for r in rows) / len(rows)
+    terminated = sum(r.get("terminated", 0.0) for r in rows)
+    return {"mean_length": round(mean_length, 4), "terminated_length": round(terminated, 4)}
+
+
+def _generation_health_from_log_history(log_history: List[Dict[str, Any]]) -> Dict[str, float]:
+    health: Dict[str, float] = {}
+    for row in log_history:
+        for source, target in (
+            ("completions/mean_length", "mean_length"),
+            ("completions/mean_terminated_length", "terminated_length"),
+        ):
+            if source in row:
+                health[target] = float(row[source])
+    return health
+
+
+def _accepted_kwargs(cls: Any, kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    """Filter config kwargs so optional TRL generation fields stay version-safe."""
+    try:
+        params = inspect.signature(cls.__init__).parameters
+    except (TypeError, ValueError):
+        return kwargs
+    if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()):
+        return kwargs
+    return {k: v for k, v in kwargs.items() if k in params}
+
+
+def _rollout_generation_health(rollouts: List[Any]) -> Dict[str, float]:
+    lengths: List[int] = []
+    terminated = 0
+    for result in rollouts:
+        for step in getattr(result, "steps", []):
+            raw = str(getattr(step, "raw_completion", "") or "")
+            if not raw:
+                continue
+            lengths.append(len(raw))
+            if raw.rstrip().endswith(tuple(STOP_TOKENS)):
+                terminated += 1
+    if not lengths:
+        return {"mean_length": 0.0, "terminated_length": 0.0}
+    return {
+        "mean_length": round(sum(lengths) / len(lengths), 4),
+        "terminated_length": float(terminated),
+    }
+
+
+def _load_grpo_policy(cfg: RLConfig, policy_path: Optional[str]):
+    """Load the current policy for TRL GRPO updates."""
+    try:
+        from unsloth import FastLanguageModel
+
+        source = policy_path if policy_path and Path(policy_path).exists() else cfg.base_model
+        model, tokenizer = FastLanguageModel.from_pretrained(
+            model_name=source,
+            max_seq_length=cfg.max_seq_length,
+            load_in_4bit=True,
+            dtype=None,
+        )
+        model = FastLanguageModel.get_peft_model(
+            model,
+            r=16,
+            target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+            lora_alpha=32,
+            lora_dropout=0.05,
+            bias="none",
+            use_gradient_checkpointing="unsloth",
+            random_state=cfg.seed,
+        )
+        if getattr(tokenizer, "pad_token", None) is None:
+            tokenizer.pad_token = tokenizer.eos_token
+        align_causal_lm_and_tokenizer(model, tokenizer, max_new_tokens=GENERATION_MAX_NEW_TOKENS)
+        return model, tokenizer
+    except Exception as e:
+        log.warning("Unsloth GRPO load failed (%s); falling back to transformers.", e)
+
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+
+    source = policy_path if policy_path and Path(policy_path).exists() else cfg.base_model
+    tokenizer = AutoTokenizer.from_pretrained(source, use_fast=True)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    model = AutoModelForCausalLM.from_pretrained(source)
+    align_causal_lm_and_tokenizer(model, tokenizer, max_new_tokens=GENERATION_MAX_NEW_TOKENS)
+    return model, tokenizer
+
+
 # ─── Model helpers ────────────────────────────────────────────────────────────
 
 def _current_policy_backend(cfg: RLConfig, model_path: Optional[str], temperature: float = 0.0):
@@ -379,6 +595,7 @@ def _current_policy_backend(cfg: RLConfig, model_path: Optional[str], temperatur
             base = AutoModelForCausalLM.from_pretrained(cfg.base_model, **kwargs)
             model = PeftModel.from_pretrained(base, model_path)
             model.eval()
+            align_causal_lm_and_tokenizer(model, tokenizer, max_new_tokens=GENERATION_MAX_NEW_TOKENS)
 
             def _call(messages: List[Dict[str, str]]) -> str:
                 prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
@@ -386,17 +603,19 @@ def _current_policy_backend(cfg: RLConfig, model_path: Optional[str], temperatur
                 with torch.no_grad():
                     out = model.generate(
                         **inputs,
-                        max_new_tokens=256,
+                        max_new_tokens=GENERATION_MAX_NEW_TOKENS,
                         do_sample=temperature > 0.0,
                         temperature=max(temperature, 1e-5),
-                        pad_token_id=tokenizer.pad_token_id,
+                        pad_token_id=tokenizer.eos_token_id,
+                        eos_token_id=tokenizer.eos_token_id,
                     )
-                return tokenizer.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
+                text = tokenizer.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
+                return _truncate_at_stop_token(text)
 
             return _call
         except Exception as e:
             log.warning("Could not load %s as a PEFT adapter (%s); trying plain HF load.", model_path, e)
-            return make_hf_pipeline_backend(model_path, max_new_tokens=256, temperature=temperature)
+            return make_hf_pipeline_backend(model_path, max_new_tokens=GENERATION_MAX_NEW_TOKENS, temperature=temperature)
     return make_heuristic_backend()
 
 
@@ -404,7 +623,7 @@ def _load_policy_model(cfg: RLConfig, policy_path: Optional[str]):
     """
     Load an SFT/previous-RL policy and ensure it has trainable LoRA params.
 
-    On Colab T4 this uses 4-bit loading when bitsandbytes is available.
+    On GPU runtimes this uses 4-bit loading when bitsandbytes is available.
     On CPU this still loads in fp32 for a shape-only dry run, but callers
     usually set `dry_run=True` locally.
     """
@@ -442,6 +661,7 @@ def _load_policy_model(cfg: RLConfig, policy_path: Optional[str]):
         model = get_peft_model(base, peft_cfg)
 
     model.train()
+    align_causal_lm_and_tokenizer(model, tokenizer, max_new_tokens=GENERATION_MAX_NEW_TOKENS)
     return model, tokenizer
 
 
@@ -486,8 +706,9 @@ def policy_gradient_update(
     transitions: List[Dict[str, Any]],
     policy_path: Optional[str],
     iteration: int,
+    train_tasks: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
-    """Run a small REINFORCE-style update on stored transitions."""
+    """Update the current policy online using TRL GRPOTrainer."""
     if cfg.dry_run:
         return {
             "iteration": iteration,
@@ -508,45 +729,75 @@ def policy_gradient_update(
             "checkpoint": policy_path,
         }
 
-    if not transitions:
-        return {"iteration": iteration, "updated": False, "reason": "no transitions"}
+    if not train_tasks:
+        return {"iteration": iteration, "updated": False, "reason": "no train tasks"}
 
-    model, tokenizer = _load_policy_model(cfg, policy_path)
-    device = next(model.parameters()).device
-    tokenizer.model_max_length = cfg.max_seq_length
+    from datasets import Dataset
+    from trl import GRPOConfig, GRPOTrainer
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.learning_rate)
-    step = 0
-    losses: List[float] = []
-    logprobs: List[float] = []
-
-    for _ in range(cfg.epochs_per_iteration):
-        for i in range(0, len(transitions), cfg.batch_size):
-            batch = transitions[i : i + cfg.batch_size]
-            loss, avg_logprob = _logprob_loss(model, tokenizer, batch, device)
-            (loss / cfg.grad_accum).backward()
-            step += 1
-            if step % cfg.grad_accum == 0:
-                optimizer.step()
-                optimizer.zero_grad(set_to_none=True)
-            losses.append(float(loss.detach().cpu()))
-            logprobs.append(avg_logprob)
-
-    if step % cfg.grad_accum:
-        optimizer.step()
-        optimizer.zero_grad(set_to_none=True)
-
+    model, tokenizer = _load_grpo_policy(cfg, policy_path)
+    component_log: List[Dict[str, float]] = []
+    health_log: List[Dict[str, float]] = []
+    reward_func = _grpo_reward_factory(component_log, health_log)
+    dataset = Dataset.from_list([
+        {
+            "prompt": _task_to_grpo_prompt(task),
+            "task_payload": json.dumps(task),
+        }
+        for task in train_tasks
+    ])
     out_dir = Path(cfg.output_dir) / f"iter_{iteration}"
     out_dir.mkdir(parents=True, exist_ok=True)
-    model.save_pretrained(out_dir)
+
+    grpo_kwargs = _accepted_kwargs(GRPOConfig, {
+        "output_dir": str(out_dir),
+        "max_steps": max(1, len(train_tasks) * cfg.epochs_per_iteration),
+        "per_device_train_batch_size": cfg.batch_size,
+        "gradient_accumulation_steps": cfg.grad_accum,
+        "learning_rate": cfg.learning_rate,
+        "logging_steps": 5,
+        "save_steps": max(10, len(train_tasks)),
+        "report_to": "none",
+        "max_prompt_length": min(3072, cfg.max_seq_length),
+        "max_completion_length": GENERATION_MAX_NEW_TOKENS,
+        "num_generations": 4,
+        "temperature": cfg.exploration_temperature,
+        "stop_strings": STOP_TOKENS,
+    })
+    args = GRPOConfig(**grpo_kwargs)
+    trainer = GRPOTrainer(
+        model=model,
+        args=args,
+        train_dataset=dataset,
+        reward_funcs=[reward_func],
+        processing_class=tokenizer,
+    )
+    train_result = trainer.train()
+    trainer.save_model(str(out_dir))
     tokenizer.save_pretrained(out_dir)
+
+    reward_components = {
+        "reward_ci": 0.0,
+        "reward_minimal": 0.0,
+        "reward_regression": 0.0,
+        "reward_penalty": 0.0,
+    }
+    for row in component_log:
+        for key in reward_components:
+            reward_components[key] += float(row.get(key, 0.0))
+    generation_health = _generation_health_from_completions(health_log)
+    generation_health.update(_generation_health_from_log_history(trainer.state.log_history))
 
     return {
         "iteration": iteration,
         "updated": True,
+        "method": "TRL_GRPOTrainer",
+        "policy_update_signal": "GRPO uses generated-token logprobs internally; offline reward-to-go advantages remain logged for trajectory analysis.",
         "transitions": len(transitions),
-        "loss": round(sum(losses) / max(1, len(losses)), 6),
-        "avg_action_logprob": round(sum(logprobs) / max(1, len(logprobs)), 6),
+        "train_tasks": len(train_tasks),
+        "metrics": getattr(train_result, "metrics", {}),
+        "reward_components": {k: round(v, 4) for k, v in reward_components.items()},
+        "generation_health": generation_health,
         "checkpoint": str(out_dir),
     }
 
@@ -556,11 +807,11 @@ def policy_gradient_update(
 def train_rl(config: Optional[RLConfig] = None) -> Dict[str, Any]:
     """
     Iterative RL loop:
-        1. rollout current policy on tasks
-        2. collect (state, action, reward, next_state) trajectories
-        3. compute reward-to-go advantages
-        4. policy-gradient update on action logprobs
-        5. evaluate and append learning-curve metrics
+        1. evaluate / log current policy
+        2. sample train tasks adaptively from failures/adversarial cases
+        3. GRPOTrainer generates completions from the current policy
+        4. reward function executes completions in CompliancePatchEnv
+        5. GRPO updates the same policy checkpoint for the next iteration
     """
     cfg = config or RLConfig()
     seed_everything(cfg.seed)
@@ -575,7 +826,7 @@ def train_rl(config: Optional[RLConfig] = None) -> Dict[str, Any]:
         alpha=cfg.tabular_alpha,
         epsilon=cfg.tabular_epsilon,
         seed=cfg.seed,
-    ) if cfg.use_tabular_rl else None
+    ) if (cfg.use_tabular_rl and cfg.dry_run) else None
     curve: List[Dict[str, Any]] = []
     updates: List[Dict[str, Any]] = []
     last_train_report: Optional[Dict[str, Any]] = None
@@ -618,6 +869,7 @@ def train_rl(config: Optional[RLConfig] = None) -> Dict[str, Any]:
         # Keep both per-iteration files and the conventional latest path the
         # user requested: project/data/trajectories_rl.jsonl.
         write_jsonl(Path(cfg.trajectories_path), list(read_jsonl(iter_traj_path)))
+        generation_health = _rollout_generation_health(rollouts)
 
         # Evaluate current policy and write learning-curve point.
         train_report = evaluate(train_tasks, llm=eval_llm, config=AgentConfig(max_steps=cfg.max_steps), print_per_task=False)
@@ -643,6 +895,9 @@ def train_rl(config: Optional[RLConfig] = None) -> Dict[str, Any]:
             "cheat_resistance": train_summary.get("cheat_resistance", 0.0),
             "failure_stats": train_summary.get("failure_stats", {}),
             "test_failure_stats": test_summary.get("failure_stats", {}),
+            "reward_components": train_summary.get("reward_components", {}),
+            "mean_length": generation_health.get("mean_length", 0.0),
+            "terminated_length": generation_health.get("terminated_length", 0.0),
             "avg_confidence": train_summary.get("avg_confidence", 0.0),
             "high_confidence_wrong": train_summary.get("high_confidence_wrong", 0),
             "recovered_tasks": recovered_tasks,
@@ -660,17 +915,26 @@ def train_rl(config: Optional[RLConfig] = None) -> Dict[str, Any]:
         curve.append(point)
         write_json(Path(cfg.learning_curve_path), curve)
         last_train_report = train_report
-        log.info("Iter %d → reward %.3f, train %.1f%%, test %.1f%%, hidden %.1f%%, recovered=%d",
+        log.info("Iter %d → reward %.3f, train %.1f%%, test %.1f%%, hidden %.1f%%, mean_length=%.1f, terminated=%.1f, recovered=%d",
                  iteration, point["avg_reward"], 100 * point["train_success_rate"],
                  100 * point["test_success_rate"], 100 * point["hidden_violation_rate"],
-                 recovered_tasks)
+                 point["mean_length"], point["terminated_length"], recovered_tasks)
+        print(
+            f"iter={iteration} avg_reward={point['avg_reward']:.3f} "
+            f"success_rate={point['success_rate']:.2%} "
+            f"hidden_violation_rate={point['hidden_violation_rate']:.2%} "
+            f"mean_length={point['mean_length']:.1f} "
+            f"terminated_length={point['terminated_length']:.1f}"
+        )
+        if point["terminated_length"] == 0:
+            print("WARNING: model not terminating properly")
 
         if iteration == cfg.iterations:
             break
 
         transitions = load_rl_transitions(str(iter_traj_path), gamma=cfg.gamma)
         tabular_update = tabular_policy.update_from_rollouts(rollouts) if tabular_policy is not None else {}
-        update = policy_gradient_update(cfg, transitions, policy_path, iteration + 1)
+        update = policy_gradient_update(cfg, transitions, policy_path, iteration + 1, train_tasks=rollout_tasks)
         update.update(tabular_update)
         updates.append(update)
         policy_path = update.get("checkpoint") or policy_path
@@ -679,6 +943,7 @@ def train_rl(config: Optional[RLConfig] = None) -> Dict[str, Any]:
 
     result = {
         "config": asdict(cfg),
+        "optimization_method": "TRL_GRPOTrainer" if not cfg.dry_run else "dry_run_no_weight_update",
         "train_task_ids": [t["task_id"] for t in train_tasks],
         "test_task_ids": [t["task_id"] for t in test_tasks],
         "learning_curve": curve,
@@ -688,17 +953,13 @@ def train_rl(config: Optional[RLConfig] = None) -> Dict[str, Any]:
     }
     if curve:
         first, last = curve[0], curve[-1]
-        print(
-            "Agent reduced hidden violations from "
-            f"{100 * first.get('hidden_violation_rate', 0.0):.1f}% → "
-            f"{100 * last.get('hidden_violation_rate', 0.0):.1f}%"
-        )
+        before_success = float(first.get("success_rate", 0.0))
+        after_success = float(last.get("success_rate", 0.0))
+        before_hidden = float(first.get("hidden_violation_rate", 0.0))
+        after_hidden = float(last.get("hidden_violation_rate", 0.0))
+        print(f"Success: {before_success:.0%} → {after_success:.0%}")
+        print(f"Hidden violations: {before_hidden:.0%} → {after_hidden:.0%}")
         print(f"Recovered {last.get('total_recovered_tasks', 0)} previously failed tasks")
-        print(
-            "Final summary: "
-            f"success {100 * first.get('success_rate', 0.0):.1f}% → {100 * last.get('success_rate', 0.0):.1f}%, "
-            f"test_success_rate={100 * last.get('test_success_rate', 0.0):.1f}%"
-        )
     write_json(DATA_DIR / "rl_training_log.json", result)
     return result
 
@@ -711,18 +972,18 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--base-model", default=DEFAULT_RL_BASE_MODEL)
     p.add_argument("--sft-adapter-dir", default=str(DEFAULT_SFT_ADAPTER_DIR))
     p.add_argument("--output-dir", default=str(RL_ADAPTER_DIR))
-    p.add_argument("--iterations", type=int, default=3)
+    p.add_argument("--iterations", type=int, default=45)
     p.add_argument("--rollouts-per-task", type=int, default=1)
     p.add_argument("--epochs-per-iteration", type=int, default=1)
     p.add_argument("--batch-size", type=int, default=2)
     p.add_argument("--grad-accum", type=int, default=4)
-    p.add_argument("--lr", type=float, default=1e-5)
+    p.add_argument("--lr", type=float, default=2e-5)
     p.add_argument("--gamma", type=float, default=1.0)
-    p.add_argument("--max-steps", type=int, default=12)
-    p.add_argument("--max-tasks", type=int, default=0)
-    p.add_argument("--dry-run", action="store_true", help="Collect trajectories/metrics but skip model updates.")
-    p.add_argument("--no-tabular-rl", action="store_true",
-                   help="Disable the always-on tabular RL controller and use only neural policy updates.")
+    p.add_argument("--max-steps", type=int, default=8)
+    p.add_argument("--max-tasks", type=int, default=20)
+    p.add_argument("--dry-run", action="store_true", help="Collect trajectories/metrics but skip GRPO model updates.")
+    p.add_argument("--use-tabular-baseline", action="store_true",
+                   help="Use the tabular controller only for CPU dry-run/baseline rollouts; final training uses TRL GRPO.")
     p.add_argument("--tabular-alpha", type=float, default=0.45)
     p.add_argument("--tabular-epsilon", type=float, default=0.20)
     p.add_argument("--exploration-temperature", type=float, default=0.30,
@@ -747,7 +1008,7 @@ def main() -> None:
         max_steps=args.max_steps,
         max_tasks=args.max_tasks,
         dry_run=args.dry_run,
-        use_tabular_rl=not args.no_tabular_rl,
+        use_tabular_rl=args.use_tabular_baseline,
         tabular_alpha=args.tabular_alpha,
         tabular_epsilon=args.tabular_epsilon,
         exploration_temperature=args.exploration_temperature,

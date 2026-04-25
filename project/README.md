@@ -130,7 +130,7 @@ This verifies API routes, task generation, RL iteration metrics, and the
 
 ---
 
-## How the self-learning loop works
+## How the online RL loop works
 
 ```
         ┌──────────────────┐
@@ -195,7 +195,7 @@ job for periodic retraining.
 The final training pipeline is:
 
 ```
-heuristic rollouts → SFT dataset → LoRA SFT policy → RL environment interaction → RL-refined policy
+heuristic rollouts → SFT initialization → online GRPO rollouts → GRPO-refined policy
 ```
 
 ---
@@ -209,32 +209,26 @@ learning problem:
 |---|---|
 | **State** | Environment observation snapshot: files, violations, CI results, file-read history, current file view, task difficulty, cumulative reward. |
 | **Action** | One structured JSON command: `read_file`, `write_patch`, `run_ci`, or `finalize_patch`. |
-| **Reward** | Per-step env reward plus terminal penalties for hidden violations (`-0.5`) and partial fixes (`-0.25`). CI/test pass, minimal patch quality, bad patch penalties, and hidden constraints all feed the reward. |
+| **Reward** | Per-step env reward plus terminal penalties for hidden violations, partial fixes, no-fix cases, regressions, and timeouts. CI/test pass, minimal patch quality, bad patch penalties, and hidden constraints all feed the reward. |
 | **Episode** | One task rollout until `done=True` or `max_steps`. |
 | **Transition** | Stored as `(state, action, reward, next_state, logprob, done)` in `project/data/trajectories_rl.jsonl`. |
 
-`project/rl_trainer.py` computes reward-to-go advantages and optimizes the
-policy to increase the model log-probability of high-reward JSON actions.
+`project/rl_trainer.py` uses TRL `GRPOTrainer` for final policy optimization.
+Heuristic/tabular rollouts are used only for initial data collection, baseline
+comparison, and CPU dry-runs. The final policy update is online GRPO: the
+current policy generates JSON actions, `CompliancePatchEnv` executes them,
+the reward function returns environment reward, and GRPO updates that same
+policy checkpoint for the next iteration.
 
-We use **tabular RL as a lightweight policy improvement mechanism for discrete
-patch decisions**, and **neural policy-gradient RL (LoRA) for scaling**. This
-is intentional: tabular RL is used because the action space is discrete and
-interpretable, making it suitable for patch decision learning. The tabular
-controller makes self-learning visible and deterministic even without a GPU,
-while the LoRA policy-gradient path trains a neural policy on Colab T4.
-
-Credit assignment uses **reward-to-go**, so later CI/hidden-oracle outcomes are
-propagated backward across the steps that caused them. During RL training,
-neural rollouts use stochastic exploration (`temperature=0.3` by default);
-evaluation remains deterministic (`temperature=0.0`). The RL loop is designed
-to scale to larger task distributions; this demo uses a small subset for
-runtime constraints.
+The RL loop is designed to scale to larger task distributions; this demo uses
+a small subset for runtime constraints.
 
 Most importantly: **the agent doesn't just learn to fix code — it learns to
 avoid cheating, because the environment penalizes hidden violations.**
 
 Each iteration, the agent explores fixes, receives feedback from a
-non-cheatable environment, and updates its policy to avoid shortcut solutions.
+non-cheatable environment, and updates the same policy to avoid shortcut
+solutions.
 
 ## Why this RL cannot be cheated
 

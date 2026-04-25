@@ -33,6 +33,47 @@ from .utils import extract_json, get_logger
 
 log = get_logger("agent")
 
+# Decoding: short JSON actions, single closing-brace stop; no max_length+max_new_tokens conflict
+GENERATION_MAX_NEW_TOKENS = 128
+STOP_TOKENS = ["}"]
+
+
+def align_causal_lm_and_tokenizer(model, tokenizer, max_new_tokens: int = GENERATION_MAX_NEW_TOKENS) -> None:
+    """
+    Unify pad/eos on tokenizer and model.config; set generation_config to
+    max_new_tokens only (clear max_length) so TRL/HF do not warn or double-set length.
+    """
+    import copy
+
+    from transformers import GenerationConfig
+
+    if getattr(tokenizer, "pad_token", None) is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    pad_id = tokenizer.pad_token_id
+    eos_id = tokenizer.eos_token_id
+    if pad_id is None and eos_id is not None:
+        tokenizer.pad_token_id = eos_id
+        pad_id = eos_id
+    model.config.pad_token_id = pad_id
+    model.config.eos_token_id = eos_id
+    bos_id = getattr(tokenizer, "bos_token_id", None)
+    if getattr(model.config, "bos_token_id", None) in (None,) and bos_id is not None:
+        model.config.bos_token_id = bos_id
+
+    try:
+        base = getattr(model, "generation_config", None)
+        gen = copy.deepcopy(base) if base is not None else GenerationConfig()
+        if hasattr(gen, "max_length"):
+            gen.max_length = None
+        gen.max_new_tokens = max_new_tokens
+        if pad_id is not None:
+            gen.pad_token_id = pad_id
+        if eos_id is not None:
+            gen.eos_token_id = eos_id
+        model.generation_config = gen
+    except Exception:
+        pass
+
 
 # ─── Strict system prompt ────────────────────────────────────────────────────
 #
@@ -163,6 +204,27 @@ def estimate_confidence(result: "TrajectoryResult") -> float:
     return round(max(0.0, min(1.0, score)), 4)
 
 
+def decompose_reward_breakdown(breakdown: Dict[str, float]) -> Dict[str, float]:
+    """Group low-level env reward keys into reviewer-friendly components."""
+    components = {
+        "reward_ci": 0.0,
+        "reward_minimal": 0.0,
+        "reward_regression": 0.0,
+        "reward_penalty": 0.0,
+    }
+    for key, value in (breakdown or {}).items():
+        value = float(value)
+        if "ci_pass" in key or "tests_pass" in key or "progress_bonus" in key:
+            components["reward_ci"] += value
+        elif "minimal_patch" in key:
+            components["reward_minimal"] += value
+        elif "regression" in key:
+            components["reward_regression"] += value
+        elif value < 0 or "penalty" in key or "cheat" in key or "invalid" in key:
+            components["reward_penalty"] += value
+    return {k: round(v, 4) for k, v in components.items()}
+
+
 # ─── Data classes ────────────────────────────────────────────────────────────
 
 @dataclass
@@ -211,6 +273,7 @@ class TrajectoryResult:
     adversarial: bool = False
     failure_type: str = "none"
     confidence: float = 0.0
+    reward_components: Dict[str, float] = field(default_factory=dict)
 
     @property
     def success_rate(self) -> float:
@@ -233,6 +296,7 @@ class TrajectoryResult:
             "adversarial": self.adversarial,
             "failure_type": self.failure_type,
             "confidence": self.confidence,
+            "reward_components": self.reward_components,
             "steps": [s.__dict__ for s in self.steps],
             "rl_trajectory": [s.__dict__ for s in self.rl_trajectory],
             "cumulative_reward": round(sum(s.reward for s in self.rl_trajectory), 4),
@@ -277,7 +341,7 @@ def make_openai_backend(
 
 def make_hf_pipeline_backend(
     model_name_or_path: str,
-    max_new_tokens: int = 512,
+    max_new_tokens: int = 128,
     temperature: float = 0.0,
 ) -> LLMCallable:
     """Local HF model via transformers — used inside the Colab training notebook."""
@@ -287,7 +351,7 @@ def make_hf_pipeline_backend(
     except ImportError as e:
         raise RuntimeError("Install transformers + torch to use the HF backend") from e
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, use_fast=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     model = AutoModelForCausalLM.from_pretrained(
@@ -296,6 +360,19 @@ def make_hf_pipeline_backend(
         device_map="auto" if torch.cuda.is_available() else None,
     )
     model.eval()
+    align_causal_lm_and_tokenizer(model, tokenizer, max_new_tokens=max_new_tokens)
+
+    def _truncate_at_stop_token(text: str) -> str:
+        earliest = None
+        token_len = 0
+        for token in STOP_TOKENS:
+            idx = text.find(token)
+            if idx != -1 and (earliest is None or idx < earliest):
+                earliest = idx
+                token_len = len(token)
+        if earliest is None:
+            return text
+        return text[: earliest + token_len]
 
     def _call(messages: List[Dict[str, str]]) -> str:
         prompt = tokenizer.apply_chat_template(
@@ -308,9 +385,11 @@ def make_hf_pipeline_backend(
                 max_new_tokens=max_new_tokens,
                 do_sample=temperature > 0.0,
                 temperature=max(temperature, 1e-5),
-                pad_token_id=tokenizer.pad_token_id,
+                pad_token_id=tokenizer.eos_token_id,
+                eos_token_id=tokenizer.eos_token_id,
             )
-        return tokenizer.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
+        text = tokenizer.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
+        return _truncate_at_stop_token(text)
 
     return _call
 
@@ -589,6 +668,7 @@ class ComplianceAgent:
             result.final_score = float(critique.get("final_score", obs.get("cumulative_reward", 0.0)))
             result.violations_fixed = int(critique.get("violations_fixed", obs.get("violations_fixed", 0)))
             result.violations_total = int(critique.get("violations_total", result.violations_total))
+            result.reward_components = decompose_reward_breakdown(critique.get("reward_breakdown", {}))
 
             # ── Hidden compliance oracle ──────────────────────────────────
             # The environment enforces this at finalize time for deployed
@@ -615,17 +695,21 @@ class ComplianceAgent:
                 0 < result.violations_fixed < result.violations_total
                 and not bool(critique.get("partial_fix"))
             ):
-                terminal_penalty -= 0.4
+                terminal_penalty -= 0.5
             if (
                 result.violations_total > 0
                 and result.violations_fixed == 0
                 and not result.hidden_violation
                 and not bool(critique.get("no_fix"))
             ):
-                terminal_penalty -= 0.1
+                terminal_penalty -= 0.2
             if terminal_penalty and result.rl_trajectory:
                 result.final_score = round(result.final_score + terminal_penalty, 4)
                 result.rl_trajectory[-1].reward = round(result.rl_trajectory[-1].reward + terminal_penalty, 4)
+                result.reward_components["reward_penalty"] = round(
+                    result.reward_components.get("reward_penalty", 0.0) + terminal_penalty,
+                    4,
+                )
             result.failure_type = classify_failure_type(result)
             result.confidence = estimate_confidence(result)
         except Exception as e:

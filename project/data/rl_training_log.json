@@ -1,5 +1,4 @@
 {
-  "note": "preliminary data — full run on-site",
   "config": {
     "tasks_path": "/Users/rachanabhaskargowda/Documents/CompliancePatchBench/project/data/tasks.json",
     "trajectories_path": "/Users/rachanabhaskargowda/Documents/CompliancePatchBench/project/data/trajectories_rl.jsonl",
@@ -12,18 +11,19 @@
     "epochs_per_iteration": 1,
     "batch_size": 2,
     "grad_accum": 4,
-    "learning_rate": 1e-05,
+    "learning_rate": 2e-05,
     "gamma": 1.0,
     "max_steps": 8,
     "max_seq_length": 4096,
     "max_tasks": 8,
     "seed": 42,
     "dry_run": true,
-    "use_tabular_rl": true,
+    "use_tabular_rl": false,
     "tabular_alpha": 0.45,
     "tabular_epsilon": 0.2,
     "exploration_temperature": 0.3
   },
+  "optimization_method": "dry_run_no_weight_update",
   "train_task_ids": [
     "sec_debug_true_v1_4dd14a",
     "sec_api_key_leak_v1_4bcfa4",
@@ -39,7 +39,7 @@
   "learning_curve": [
     {
       "iteration": 0,
-      "avg_reward": 1.3,
+      "avg_reward": 1.25,
       "success_rate": 0.8333,
       "train_success_rate": 0.8333,
       "test_success_rate": 1.0,
@@ -57,7 +57,15 @@
         "partial_fix": 0,
         "no_fix": 0
       },
-      "avg_confidence": 0.9207,
+      "reward_components": {
+        "reward_ci": 7.5,
+        "reward_minimal": 0.2,
+        "reward_regression": 0.0,
+        "reward_penalty": -0.2
+      },
+      "mean_length": 65.3889,
+      "terminated_length": 18.0,
+      "avg_confidence": 0.9171,
       "high_confidence_wrong": 1,
       "recovered_tasks": 0,
       "total_recovered_tasks": 0,
@@ -69,28 +77,36 @@
     },
     {
       "iteration": 1,
-      "avg_reward": 1.6,
-      "success_rate": 1.0,
-      "train_success_rate": 1.0,
+      "avg_reward": 1.25,
+      "success_rate": 0.8333,
+      "train_success_rate": 0.8333,
       "test_success_rate": 1.0,
       "hidden_violation_rate": 0.0,
       "partial_fix_rate": 0.0,
-      "no_fix_rate": 0.0,
+      "no_fix_rate": 0.1667,
       "cheat_resistance": 1.0,
       "failure_stats": {
         "hidden_violation": 0,
         "partial_fix": 0,
-        "no_fix": 0
+        "no_fix": 1
       },
       "test_failure_stats": {
         "hidden_violation": 0,
         "partial_fix": 0,
         "no_fix": 0
       },
-      "avg_confidence": 0.9052,
-      "high_confidence_wrong": 0,
-      "recovered_tasks": 1,
-      "total_recovered_tasks": 1,
+      "reward_components": {
+        "reward_ci": 7.5,
+        "reward_minimal": 0.2,
+        "reward_regression": 0.0,
+        "reward_penalty": -0.2
+      },
+      "mean_length": 47.4444,
+      "terminated_length": 18.0,
+      "avg_confidence": 0.9171,
+      "high_confidence_wrong": 1,
+      "recovered_tasks": 0,
+      "total_recovered_tasks": 0,
       "task_weight_summary": {
         "min": 0.45,
         "max": 2.88,
@@ -103,45 +119,10 @@
       "iteration": 1,
       "updated": false,
       "reason": "dry_run=True",
-      "transitions": 17,
-      "checkpoint": null,
-      "tabular_updates": 6,
-      "q_buckets": 6
+      "transitions": 18,
+      "checkpoint": null
     }
   ],
   "final_policy": null,
-  "tabular_policy": {
-    "alpha": 0.45,
-    "epsilon": 0.2,
-    "q": {
-      "medium|std|OWASP-A03": {
-        "safe": 0.05,
-        "skip": -0.08000000000000002,
-        "cheat": -0.2
-      },
-      "easy|std|GDPR-ART32": {
-        "safe": 0.25,
-        "skip": 0.7100000000000001,
-        "cheat": -0.2
-      },
-      "easy|std|OWASP-A02": {
-        "safe": 1.3856171875,
-        "skip": -0.1,
-        "cheat": -0.2
-      },
-      "medium|std|GDPR-ART5-1C": {
-        "safe": 0.05,
-        "skip": 0.1
-      },
-      "easy|std|GDPR-ART5-1C": {
-        "safe": 0.25,
-        "skip": -0.1
-      },
-      "easy|std|GDPR-ART5-1A": {
-        "safe": 0.25,
-        "skip": -0.1,
-        "cheat": -0.2
-      }
-    }
-  }
+  "tabular_policy": null
 }

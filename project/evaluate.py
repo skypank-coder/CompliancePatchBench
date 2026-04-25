@@ -96,6 +96,12 @@ def aggregate(results: List[TrajectoryResult]) -> Dict:
     hidden_violations = sum(1 for r in results if r.hidden_violation)
     failure_stats = {"hidden_violation": 0, "partial_fix": 0, "no_fix": 0}
     high_conf_wrong = 0
+    reward_components = {
+        "reward_ci": 0.0,
+        "reward_minimal": 0.0,
+        "reward_regression": 0.0,
+        "reward_penalty": 0.0,
+    }
 
     by_diff = {"easy": [], "medium": [], "hard": []}
     statuses = {"SUCCESS": 0, "PARTIAL": 0, "FAIL": 0}
@@ -108,6 +114,8 @@ def aggregate(results: List[TrajectoryResult]) -> Dict:
             failure_stats[failure_type] += 1
         if status != "SUCCESS" and r.confidence >= 0.75:
             high_conf_wrong += 1
+        for key in reward_components:
+            reward_components[key] += float((r.reward_components or {}).get(key, 0.0))
 
     return {
         "n": n,
@@ -128,6 +136,7 @@ def aggregate(results: List[TrajectoryResult]) -> Dict:
         "by_difficulty_counts": {d: len(rs) for d, rs in by_diff.items() if rs},
         "status_counts": statuses,
         "failure_stats": failure_stats,
+        "reward_components": {k: round(v, 4) for k, v in reward_components.items()},
         "avg_confidence": round(sum(r.confidence for r in results) / n, 4),
         "high_confidence_wrong": high_conf_wrong,
         # legacy alias so existing notebooks/scripts don't break
@@ -170,6 +179,7 @@ def evaluate(
             "hidden_reason": t.hidden_reason,
             "failure_type": t.failure_type if t.failure_type != "none" else classify_failure_type(t),
             "confidence": t.confidence,
+            "reward_components": t.reward_components,
             "n_steps": len(t.steps),
             "fallback_steps": sum(1 for s in t.steps if s.used_fallback),
             "actions": [s.parsed_action.get("action_type") for s in t.steps],
@@ -252,6 +262,14 @@ def print_comparison(diff: Dict) -> None:
             a = as_.get(s, 0)
             print(f"{s:<12}{b:>12d}{a:>12d}{(a-b):>+12d}")
 
+    bsum, asum = diff["before"], diff["after"]
+    before_success = float(bsum.get("overall_success_rate", 0.0))
+    after_success = float(asum.get("overall_success_rate", 0.0))
+    before_hidden = float(bsum.get("hidden_violation_rate", 0.0))
+    after_hidden = float(asum.get("hidden_violation_rate", 0.0))
+    print(f"\nSuccess: {before_success:.0%} → {after_success:.0%}")
+    print(f"Hidden violations: {before_hidden:.0%} → {after_hidden:.0%}")
+
 
 def print_summary(report: Dict) -> None:
     """Console summary of a single evaluate() report (used by CLI default path)."""
@@ -279,6 +297,12 @@ def print_summary(report: Dict) -> None:
     if fs:
         print(f"  failure stats:          hidden={fs.get('hidden_violation', 0)}  "
               f"partial={fs.get('partial_fix', 0)}  no_fix={fs.get('no_fix', 0)}")
+    rc = s.get("reward_components", {})
+    if rc:
+        print(f"  reward components:      ci={rc.get('reward_ci', 0.0):+.3f}  "
+              f"minimal={rc.get('reward_minimal', 0.0):+.3f}  "
+              f"regression={rc.get('reward_regression', 0.0):+.3f}  "
+              f"penalty={rc.get('reward_penalty', 0.0):+.3f}")
 
 
 def compare_iterations(metrics: List[Dict]) -> Dict:
@@ -323,18 +347,12 @@ def print_iteration_comparison(metrics: List[Dict]) -> None:
         )
     if metrics:
         first, last = metrics[0], metrics[-1]
-        print(
-            f"\nIter {first.get('iteration', 0)} → reward {first.get('avg_reward', 0.0):.3f}, "
-            f"success {first.get('success_rate', 0.0):.0%}"
-        )
-        print(
-            f"Iter {last.get('iteration', 0)} → reward {last.get('avg_reward', 0.0):.3f}, "
-            f"success {last.get('success_rate', 0.0):.0%}"
-        )
-        print(
-            "Agent reduced hidden violations from "
-            f"{first.get('hidden_violation_rate', 0.0):.0%} → {last.get('hidden_violation_rate', 0.0):.0%}"
-        )
+        before_success = float(first.get("success_rate", first.get("train_success_rate", 0.0)))
+        after_success = float(last.get("success_rate", last.get("train_success_rate", 0.0)))
+        before_hidden = float(first.get("hidden_violation_rate", 0.0))
+        after_hidden = float(last.get("hidden_violation_rate", 0.0))
+        print(f"Success: {before_success:.0%} → {after_success:.0%}")
+        print(f"Hidden violations: {before_hidden:.0%} → {after_hidden:.0%}")
         print(f"Recovered {int(last.get('total_recovered_tasks', 0))} previously failed tasks")
         print(f"Final test_success_rate: {last.get('test_success_rate', 0.0):.0%}")
 

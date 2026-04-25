@@ -767,11 +767,11 @@ class CompliancePatchEnv:
             final_reward -= 1.0
             breakdown["hidden_violation_penalty"] = -1.0
         if partial_fix:
-            final_reward -= 0.4
-            breakdown["partial_fix_penalty"] = -0.4
+            final_reward -= 0.5
+            breakdown["partial_fix_penalty"] = -0.5
         if no_fix:
-            final_reward -= 0.1
-            breakdown["no_fix_penalty"] = -0.1
+            final_reward -= 0.2
+            breakdown["no_fix_penalty"] = -0.2
         if fail_timeout:
             final_reward -= 0.10
             breakdown["timeout_penalty"] = -0.10

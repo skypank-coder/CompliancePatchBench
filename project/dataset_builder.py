@@ -304,7 +304,7 @@ def filter_and_export(
 # ─── CLI ─────────────────────────────────────────────────────────────────────
 
 def _parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Build a self-learning SFT dataset by running rollouts.")
+    p = argparse.ArgumentParser(description="Build an SFT dataset by running environment rollouts.")
     p.add_argument("--tasks", type=str, default=str(TASKS_PATH), help="Path to tasks.json")
     p.add_argument("--out", type=str, default=str(DATASET_PATH), help="Output JSONL path for the SFT dataset")
     p.add_argument("--trajectories", type=str, default=str(TRAJECTORIES_PATH),

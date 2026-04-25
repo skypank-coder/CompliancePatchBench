@@ -1,7 +1,7 @@
 """
 GRPO Training Script for CompliancePatchBench patch agent.
 Run on Google Colab with a T4 GPU.
-Trains Qwen2.5-1.5B-Instruct to write compliance patches via GRPO.
+Trains a configurable Qwen/Unsloth instruct model to write compliance patches via GRPO.
 
 Usage:
   pip install unsloth trl requests
@@ -10,18 +10,25 @@ Usage:
 """
 
 import os
+import sys
 import json
 import re
 import requests
 import torch
+from pathlib import Path
 from typing import List
 
+_ROOT = Path(__file__).resolve().parents[1]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
 from environment.patch_env import CompliancePatchEnv
+from project.agent import GENERATION_MAX_NEW_TOKENS, align_causal_lm_and_tokenizer
 from environment.tasks.task1_single_file import get_task as get_task1
 from environment.tasks.task2_django_app import get_task as get_task2
 
 ENV_BASE_URL = os.environ.get("ENV_BASE_URL", "http://localhost:7860")
-MODEL_NAME = "unsloth/Qwen2.5-1.5B-Instruct"
+MODEL_NAME = os.environ.get("MODEL_NAME", "unsloth/Qwen2.5-3B-Instruct")
 MAX_STEPS = 60
 BATCH_SIZE = 4
 TASKS = ["task1_single_file", "task2_django_app"]
@@ -56,6 +63,11 @@ def call_env(endpoint: str, payload: dict) -> dict:
     return r.json()
 
 
+def _truncate_at_stop_token(text: str, stop: str = "}") -> str:
+    k = text.find(stop)
+    return text[: k + 1] if k != -1 else text
+
+
 def rollout(model, tokenizer, task_id: str) -> dict:
     """Run one episode and return (prompt, completion, reward)."""
     reset = call_env("patch/reset", {"task_id": task_id})
@@ -84,13 +96,15 @@ def rollout(model, tokenizer, task_id: str) -> dict:
         with torch.no_grad():
             outputs = model.generate(
                 **inputs,
-                max_new_tokens=256,
+                max_new_tokens=GENERATION_MAX_NEW_TOKENS,
                 temperature=0.7,
                 do_sample=True,
                 pad_token_id=tokenizer.eos_token_id,
+                eos_token_id=tokenizer.eos_token_id,
             )
 
-        completion = tokenizer.decode(outputs[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
+        raw = tokenizer.decode(outputs[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
+        completion = _truncate_at_stop_token(raw)
         all_completions.append(completion)
 
         # Parse action
@@ -144,6 +158,9 @@ def train():
         bias="none",
         use_gradient_checkpointing="unsloth",
     )
+    if getattr(tokenizer, "pad_token", None) is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    align_causal_lm_and_tokenizer(model, tokenizer, max_new_tokens=GENERATION_MAX_NEW_TOKENS)
     FastLanguageModel.for_training(model)
 
     reward_history = []
@@ -228,7 +245,7 @@ def train():
         logging_steps=5,
         save_steps=20,
         report_to="none",
-        max_completion_length=256,
+        max_completion_length=GENERATION_MAX_NEW_TOKENS,
         num_generations=4,
     )
 

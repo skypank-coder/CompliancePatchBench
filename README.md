@@ -4,7 +4,6 @@ emoji: 🛡️
 colorFrom: blue
 colorTo: purple
 sdk: docker
-app_file: api/server.py
 pinned: false
 ---
 
@@ -157,6 +156,8 @@ trains `unsloth/Qwen2.5-3B-Instruct` with TRL `GRPOTrainer`, and optionally
 pushes the adapter to `HF_OUTPUT_REPO`.
 
 ## Docker / Hugging Face Space
+
+**Live Space:** [huggingface.co/spaces/rachana05/Compliance-patch-bench](https://huggingface.co/spaces/rachana05/Compliance-patch-bench)
 
 ```bash
 docker build -t compliancepatchbench .

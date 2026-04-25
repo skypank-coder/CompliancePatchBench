@@ -5,6 +5,8 @@ colorFrom: blue
 colorTo: purple
 sdk: docker
 pinned: false
+license: mit
+short_description: RL environment for training patch agents on compliance with GRPO and hidden oracles
 ---
 
 # CompliancePatchBench
@@ -168,3 +170,4 @@ curl http://localhost:7860/rl/learning-curve
 ```
 
 See `HF_SPACE_DEPLOYMENT.md` for the deployment checklist.
+Space metadata reference: [Spaces config](https://huggingface.co/docs/hub/spaces-config-reference).

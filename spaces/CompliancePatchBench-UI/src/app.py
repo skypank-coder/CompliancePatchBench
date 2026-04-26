@@ -541,14 +541,13 @@ with tab_train:
     mc1, mc2, mc3 = st.columns(3)
     dsign = f"{improvement_pct:+.0f}%"
     with mc1:
-        st.metric("📉 Initial reward", f"{initial_reward:+.2f}", border=True)
+        st.metric("📉 Initial reward", f"{initial_reward:+.2f}")
     with mc2:
         st.metric(
             "📈 Peak reward",
             f"{peak_reward:+.2f}",
             f"highest @ step {pstep}" if pstep != "—" else "—",
             delta_color="off",
-            border=True,
         )
     with mc3:
         st.metric(
@@ -556,7 +555,6 @@ with tab_train:
             f"{final_reward:+.2f}",
             f"Δ {dsign} vs start",
             delta_color="normal" if imp_good else "inverse",
-            border=True,
         )
 
     if len(curve_data) >= 2 and len(step_numbers) == len(curve_data) == len(smoothed):

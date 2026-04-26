@@ -175,7 +175,8 @@ class RLConfig:
     use_tabular_rl: bool = False
     tabular_alpha: float = 0.45
     tabular_epsilon: float = 0.20
-    exploration_temperature: float = 0.8
+    exploration_temperature: float = 0.6
+    exploration_top_p: float = 0.9
 
 
 class TabularPatchPolicy:
@@ -611,11 +612,17 @@ def _load_grpo_policy(cfg: RLConfig, policy_path: Optional[str]):
 
 # ─── Model helpers ────────────────────────────────────────────────────────────
 
-def _current_policy_backend(cfg: RLConfig, model_path: Optional[str], temperature: float = 0.0):
+def _current_policy_backend(
+    cfg: RLConfig,
+    model_path: Optional[str],
+    temperature: float = 0.0,
+    top_p: float = 0.9,
+):
     """
     Use a local SFT/RL LoRA policy if present; otherwise deterministic heuristic.
 
-    During RL rollout we set temperature around 0.8 (GRPO needs diverse group samples).
+    During RL rollout we use moderate sampling for exploration without letting
+    action formatting drift.
     During evaluation we set `temperature=0.0` for deterministic scoring.
     """
     if model_path and Path(model_path).exists():
@@ -656,6 +663,7 @@ def _current_policy_backend(cfg: RLConfig, model_path: Optional[str], temperatur
                             max_new_tokens=GENERATION_MAX_NEW_TOKENS,
                             do_sample=True,
                             temperature=t,
+                            top_p=float(top_p),
                             pad_token_id=tokenizer.pad_token_id,
                             eos_token_id=_eos if _eos else tokenizer.eos_token_id,
                         )
@@ -665,7 +673,12 @@ def _current_policy_backend(cfg: RLConfig, model_path: Optional[str], temperatur
             return _call
         except Exception as e:
             log.warning("Could not load %s as a PEFT adapter (%s); trying plain HF load.", model_path, e)
-            return make_hf_pipeline_backend(model_path, max_new_tokens=GENERATION_MAX_NEW_TOKENS, temperature=temperature)
+            return make_hf_pipeline_backend(
+                model_path,
+                max_new_tokens=GENERATION_MAX_NEW_TOKENS,
+                temperature=temperature,
+                top_p=top_p,
+            )
     return make_heuristic_backend()
 
 
@@ -816,6 +829,7 @@ def policy_gradient_update(
         "max_completion_length": GENERATION_MAX_NEW_TOKENS,
         "num_generations": 4,
         "temperature": cfg.exploration_temperature,
+        "top_p": cfg.exploration_top_p,
     }
     if _gkw is not None:
         grpo_kwargs["generation_kwargs"] = _gkw
@@ -898,6 +912,7 @@ def train_rl(config: Optional[RLConfig] = None) -> Dict[str, Any]:
                 cfg,
                 policy_path if not cfg.dry_run else None,
                 temperature=cfg.exploration_temperature,
+                top_p=cfg.exploration_top_p,
             )
             eval_llm = _current_policy_backend(
                 cfg,
@@ -1057,8 +1072,10 @@ def _parse_args() -> argparse.Namespace:
                    help="Use the tabular controller only for CPU dry-run/baseline rollouts; final training uses TRL GRPO.")
     p.add_argument("--tabular-alpha", type=float, default=0.45)
     p.add_argument("--tabular-epsilon", type=float, default=0.20)
-    p.add_argument("--exploration-temperature", type=float, default=0.8,
-                   help="Neural policy sampling temperature for GRPO / rollout (default 0.8; low values hurt group-relative advantages).")
+    p.add_argument("--exploration-temperature", type=float, default=0.6,
+                   help="Neural policy sampling temperature for GRPO / rollout (default 0.6).")
+    p.add_argument("--exploration-top-p", type=float, default=0.9,
+                   help="Neural policy nucleus sampling for GRPO / rollout (default 0.9).")
     return p.parse_args()
 
 
@@ -1083,6 +1100,7 @@ def main() -> None:
         tabular_alpha=args.tabular_alpha,
         tabular_epsilon=args.tabular_epsilon,
         exploration_temperature=args.exploration_temperature,
+        exploration_top_p=args.exploration_top_p,
     )
     print(json.dumps(train_rl(cfg), indent=2))
 

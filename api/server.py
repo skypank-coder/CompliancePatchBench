@@ -127,6 +127,12 @@ def _rl_learning_curve_derived(curve: List[Dict[str, Any]]) -> Dict[str, Any]:
     except (TypeError, ValueError):
         peak_iter = best_ri
     peak_s = max(succ) if succ else 0.0
+    best_si = max(range(n), key=lambda i: succ[i]) if n else 0
+    best_s_iter_raw = curve[best_si].get("iteration") if n else 0
+    try:
+        best_s_iter = int(best_s_iter_raw)
+    except (TypeError, ValueError):
+        best_s_iter = best_si
     if last_10 > first_5 + 0.05:
         trend = "improving (last-10 mean above first-5 mean)"
     else:
@@ -150,7 +156,9 @@ def _rl_learning_curve_derived(curve: List[Dict[str, Any]]) -> Dict[str, Any]:
         "peak_reward": peak_rew,
         "peak_reward_iteration": peak_iter,
         "peak_success_rate": float(peak_s),
+        "peak_success_iteration": best_s_iter,
         "last_10_avg_reward": float(last_10),
+        "last_10_avg_success": float(last_n_mean(succ, 10)),
         "first_5_avg_reward": float(first_5),
         "trend": trend,
         "total_iterations": n,

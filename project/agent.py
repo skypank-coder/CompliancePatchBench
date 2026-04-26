@@ -37,7 +37,7 @@ log = get_logger("agent")
 # Decoding: pass max_new_tokens (and only that) to model.generate. JSON span is
 # taken via clip_model_json_output. Stopping: tokenizer EOS + literal `}` token id
 # (see json_action_eos_token_ids) so GRPO completions terminate before the cap.
-GENERATION_MAX_NEW_TOKENS = 256
+GENERATION_MAX_NEW_TOKENS = 120
 STOP_TOKENS = ["}"]  # used only for legacy health heuristics; prefer clip_model_json_output
 
 
@@ -321,6 +321,7 @@ def make_hf_pipeline_backend(
     model_name_or_path: str,
     max_new_tokens: int = GENERATION_MAX_NEW_TOKENS,
     temperature: float = 0.0,
+    top_p: float = 0.9,
 ) -> LLMCallable:
     """Local HF model via transformers — used inside the Colab training notebook."""
     try:
@@ -362,6 +363,7 @@ def make_hf_pipeline_backend(
                     max_new_tokens=max_new_tokens,
                     do_sample=True,
                     temperature=t,
+                    top_p=float(top_p),
                     pad_token_id=tokenizer.pad_token_id,
                     eos_token_id=_eos if _eos else tokenizer.eos_token_id,
                 )

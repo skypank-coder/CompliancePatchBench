@@ -420,6 +420,27 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# ---- Session defaults ------------------------------------------------------------
+if "using_demo" not in st.session_state:
+    st.session_state.using_demo = not check_health(ENV_BASE_URL)
+if "final_score_demo" not in st.session_state:
+    st.session_state.final_score_demo = None
+if "last_live_ok" not in st.session_state:
+    st.session_state.last_live_ok = False
+
+# Single GET /project (includes ui: public Colab link + live-demo copy for tabs)
+_project_payload: Dict[str, Any] = fetch_project_api(ENV_BASE_URL)
+_ui_block: Dict[str, Any] = _project_payload.get("ui") if isinstance(_project_payload.get("ui"), dict) else {}
+_ld = _ui_block.get("live_demo") if isinstance(_ui_block.get("live_demo"), dict) else {}
+_reward_legend: Dict[str, Any] = (
+    _ui_block.get("reward_legend") if isinstance(_ui_block.get("reward_legend"), dict) else {}
+)
+_rl_cfg: Dict[str, Any] = (
+    _project_payload.get("rl_training_config")
+    if isinstance(_project_payload.get("rl_training_config"), dict)
+    else {}
+)
+
 # ---- Sidebar ---------------------------------------------------------------------
 with st.sidebar:
     st.title("🛡️ CompliancePatchBench")
@@ -433,26 +454,9 @@ with st.sidebar:
     st.link_button("GitHub repo", GITHUB_URL, width="stretch")
     st.link_button("Hugging Face — API (FastAPI)", HF_API_SPACE_URL, width="stretch")
     st.link_button("Hugging Face — Streamlit UI", HF_UI_SPACE_URL, width="stretch")
-
-# ---- Session defaults ------------------------------------------------------------
-if "using_demo" not in st.session_state:
-    st.session_state.using_demo = not check_health(ENV_BASE_URL)
-if "final_score_demo" not in st.session_state:
-    st.session_state.final_score_demo = None
-if "last_live_ok" not in st.session_state:
-    st.session_state.last_live_ok = False
-
-_project_payload: Dict[str, Any] = fetch_project_api(ENV_BASE_URL)
-_ui_block: Dict[str, Any] = _project_payload.get("ui") if isinstance(_project_payload.get("ui"), dict) else {}
-_ld = _ui_block.get("live_demo") if isinstance(_ui_block.get("live_demo"), dict) else {}
-_reward_legend: Dict[str, Any] = (
-    _ui_block.get("reward_legend") if isinstance(_ui_block.get("reward_legend"), dict) else {}
-)
-_rl_cfg: Dict[str, Any] = (
-    _project_payload.get("rl_training_config")
-    if isinstance(_project_payload.get("rl_training_config"), dict)
-    else {}
-)
+    _colab_url = str(_ui_block.get("public_colab_url", "") or "").strip()
+    if _colab_url.startswith("http"):
+        st.link_button("Open training notebook (Colab)", _colab_url, width="stretch")
 
 # ---- Tabs ------------------------------------------------------------------------
 tab_live, tab_train, tab_bench = st.tabs(
@@ -637,8 +641,16 @@ with tab_train:
             if derived.get("peak_success_rate") is not None:
                 with mcols[mi % 4]:
                     st.metric(
-                        "Peak success rate",
+                        "Best batch",
                         f"{float(derived['peak_success_rate']):.0%}",
+                        f"RL iter {int(derived.get('peak_success_iteration') or 0)}" if derived.get("peak_success_iteration") is not None else None,
+                    )
+                mi += 1
+            if derived.get("last_10_avg_success") is not None:
+                with mcols[mi % 4]:
+                    st.metric(
+                        "Last 10 avg",
+                        f"{float(derived['last_10_avg_success']):.0%}",
                     )
                 mi += 1
             if "consistency_score" in derived and derived.get("consistency_score") is not None:
@@ -671,49 +683,9 @@ with tab_train:
                 f"–{step_numbers[-1] if step_numbers else '—'}"
             )
 
-    with st.spinner("Loading eval breakdown…"):
-        breakdown_data = _safe_get(
-            f"{ENV_BASE_URL.rstrip('/')}/stats/failure-breakdown", timeout=10.0
-        )
-    if (
-        breakdown_data
-        and isinstance(breakdown_data.get("breakdown"), dict)
-        and int(breakdown_data.get("total", 0) or 0) > 0
-    ):
-        tot = int(breakdown_data["total"])
-        b = breakdown_data["breakdown"]
-        _keys = (
-            ("Success", "success"),
-            ("Partial fix", "partial_fix"),
-            ("Invalid / empty JSON", "invalid_json"),
-            ("Hidden cheat", "incorrect_patch"),
-        )
-        shown = 0
-        for _label, k in _keys:
-            row = b.get(k) or {}
-            c = int(row.get("count", 0) or 0)
-            if c > 0:
-                shown += 1
-        if shown > 0:
-            st.divider()
-            st.subheader("Failure breakdown (eval tasks)")
-            cols_fb = st.columns(4)
-            placed = 0
-            for label, k in _keys:
-                row = b.get(k) or {}
-                c = int(row.get("count", 0) or 0)
-                if c <= 0:
-                    continue
-                with cols_fb[placed % 4]:
-                    st.metric(
-                        label,
-                        f"{float(row.get('pct', 0)):.0%}",
-                        f"{c} of {tot}",
-                    )
-                placed += 1
-            ins = breakdown_data.get("insight", "")
-            if ins:
-                st.caption(str(ins))
+    st.divider()
+    st.subheader("What To Highlight")
+    st.caption("Best batch, last-10 consistency, and the clean successful reward trace are the headline signals for this run.")
 
 
 # === Tab 3: Benchmark ==============================================================

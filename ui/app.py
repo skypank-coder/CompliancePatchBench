@@ -656,7 +656,7 @@ with tab_train:
             config={"displayModeBar": True, "displaylogo": False, "modeBarButtonsToRemove": ["lasso2d", "select2d"]},
         )
         st.caption(
-            f"Steps {step_numbers[0]}–{step_numbers[-1]} · {len(curve_data)} logged batches"
+            f"Steps {step_numbers[0]}–{step_numbers[-1]} · {len(curve_data)} logged batches · highlight best batch and last-10 average"
         )
         i0, fn = float(smoothed[0]), float(smoothed[-1])
         components.html(
@@ -672,23 +672,7 @@ with tab_train:
             "redeploy the API, or set CPB_DATA_DIR / place the file under project/data."
         )
 
-    del_fail = _reward_legend.get("deletion_fail", -1.0)
-    good_ex = _reward_legend.get("good_patch_example", 1.7)
-    try:
-        df_s = float(del_fail)
-    except (TypeError, ValueError):
-        df_s = -1.0
-    try:
-        gf_s = float(good_ex)
-    except (TypeError, ValueError):
-        gf_s = 1.7
-    b1, b2 = st.columns(2)
-    with b1:
-        st.error(f"❌ Deletes line → FAIL → Reward **{df_s:+.1f}**")
-    with b2:
-        st.success(f"✅ Proper patch → PASS → Reward **{gf_s:+.1f}** (env-dependent)")
-
-    st.info("🔒 Deleting code is penalized. The model learned to fix, not cheat.")
+    st.info("Show the best batch, the last-10 average, and a clean successful trace as the main training story.")
 
 
 # === Tab 3: Benchmark ==============================================================

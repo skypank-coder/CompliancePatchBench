@@ -27,6 +27,13 @@ Recreate `hf-ui-space` after UI changes so the split includes the latest commits
 
 The UI card `README.md` in that folder must keep `short_description` **≤ 60 characters** (Hub validation).
 
+## Public Colab ↔ API ↔ Streamlit (how data actually flows)
+
+- **Colab** runs training and **writes files** in the runtime (e.g. `project/data/learning_curve.json`, `rl_training_log.json`). It does **not** connect directly to a Hugging Face Space over the public internet like a long-lived “socket” to the API.
+- The **API Space** reads those JSON files from the **Docker image** (whatever was committed in the monorepo when you `git push space main`). The **Streamlit** UI only calls the API over HTTP (`ENV_BASE_URL`) — it never talks to Colab.
+- **To get new training curves / metrics on the live dashboard after a Colab run:** copy the updated files into `project/data/`, commit, and **redeploy the API Space** so the new JSON is inside the new image. Then restart or refresh the UI (still pointed at the same `ENV_BASE_URL`).
+- **To “attach” the public notebook for judges:** set `"public_colab_url"` in `project/data/ui_data.json` to your **public** Colab link (e.g. `https://colab.research.google.com/github/...` or a shared Drive notebook URL). The Streamlit app reads `GET /project` → `ui` and, if the URL is non-empty, shows **Open training notebook (Colab)** in the sidebar. The training **numbers** on the app still come only from the API files above, not from the Colab process at click time.
+
 ## `ENV_BASE_URL` (frontend → backend, required for a live demo)
 
 The **Streamlit** Space is the **frontend**; the **FastAPI** Space is the **backend**. The UI’s Python code uses `ENV_BASE_URL` for all `requests` to `/health`, `/rl/learning-curve`, `/benchmark`, and patch endpoints. There is no client-side browser CORS to the API — the **Streamlit server** fetches the API.

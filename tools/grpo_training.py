@@ -83,7 +83,8 @@ def rollout(model, tokenizer, task_id: str) -> dict:
             outputs = model.generate(
                 **inputs,
                 max_new_tokens=GENERATION_MAX_NEW_TOKENS,
-                temperature=0.8,
+                temperature=0.6,
+                top_p=0.9,
                 do_sample=True,
                 pad_token_id=tokenizer.pad_token_id,
                 eos_token_id=_eos if _eos else tokenizer.eos_token_id,
@@ -303,7 +304,7 @@ def train():
         max_prompt_length=1536,
         max_completion_length=GENERATION_MAX_NEW_TOKENS,
         num_generations=4,
-        generation_kwargs=_gen_kw,
+        generation_kwargs={**(_gen_kw or {}), "temperature": 0.6, "top_p": 0.9},
     )
 
     trainer = GRPOTrainer(

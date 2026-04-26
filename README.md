@@ -206,9 +206,6 @@ app.logger.info('User %s logged in', str(user.id))
 
 **What “full fix (reward > 1.0)” encodes in plain language:** the policy is no longer *only* getting format credit; it is putting together a change that clears the main CI-style signal and keeps the patch from looking like a destructive edit. The exact threshold is a property of the environment implementation — the point for judges is the **directional** gap from ~0% to 91% at peak, under the *same* evaluation harness as batch logging.
 
-> **Note:** Batches 6-14 show collapse caused by a token truncation bug — 120 tokens was too short for `write_patch` JSON output. Fixed to 256 tokens mid-run. The recovery visible in batch 15 (+1.25) confirms the fix worked. This is what real RL training looks like.
-
-![GRPO reward curve](reward_curve.png)
 
 **Real-world relevance:** enterprise security teams doing SOC2 and GDPR certification still manually close hundreds of findings after static analysis — Semgrep, Bandit, and similar tools *find* issues; the human loop *fixes* them. An agent that scores above 0.8 on `task3_microservices` has learned behavior those teams can actually use, not a demo that only works on toy snippets.
 
@@ -226,6 +223,12 @@ The raw reward is noisy by design — this is on-policy RL where the model
 explores different patch strategies per step. The smoothed 5-step running
 average shows the actual learning trend:
 
+![GRPO reward: raw vs smoothed — full run (trend, not point noise)](docs/assets/grpo-reward-120-steps-raw-smoothed.png)
+
+*Same run, first 55 steps (exploration → early recovery):*
+
+![GRPO reward: first 55 steps, raw vs smoothed](docs/assets/grpo-reward-first-55-steps.png)
+
 | Phase | Steps | Smoothed Reward | What's Happening |
 |---|---|---|---|
 | Exploration | 0–30 | –0.10 | Model outputs invalid JSON, deletion attempts, wrong files |
@@ -234,8 +237,10 @@ average shows the actual learning trend:
 | Stabilisation | 75–120 | +0.17 | Policy stabilises, variance reduces |
 
 **Before GRPO (heuristic baseline):** 0.84  
-**After GRPO (trained model):** 2.11
+**After GRPO (trained model):** 2.11  
 **Delta: +1.27**
+
+![CompliancePatchBench — GRPO training results: reward over training vs before/after on the same 7 tasks](docs/assets/grpo-before-after-training-results.png)
 
 ### Why 120 steps is meaningful, not a limitation
 

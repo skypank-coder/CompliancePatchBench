@@ -54,42 +54,53 @@ def _safe_get(url: str, timeout: float = 12.0) -> Optional[dict]:
     return None
 
 
-def _fetch_rl_learning_curve(base: str) -> Dict[str, Any]:
-    """Single source: GET /rl/learning-curve (returns real logs from API)."""
-    url = f"{base.rstrip('/')}/rl/learning-curve"
-    try:
-        r = requests.get(url, timeout=12)
-    except Exception as e:
-        return {"ok": False, "err": str(e), "learning_curve": [], "derived": None, "rewards": [], "note": None}
-    if r.status_code != 200:
-        return {"ok": False, "err": f"HTTP {r.status_code}", "learning_curve": [], "derived": None, "rewards": [], "note": None}
-    data = r.json()
+def _fetch_training_curve(base: str) -> Dict[str, Any]:
+    """
+    Real training data from API: GET /training-curve (or /rl/learning-curve), no dummy fill.
+    Response includes `steps` and `rewards` from `project/data/learning_curve.json`.
+    """
+    data = None
+    last_err: Optional[str] = None
+    for path in ("/training-curve", "/rl/learning-curve"):
+        url = f"{base.rstrip('/')}{path}"
+        try:
+            r = requests.get(url, timeout=15)
+            if r.status_code == 200:
+                data = r.json()
+                break
+            last_err = f"HTTP {r.status_code} from {path}"
+        except Exception as e:
+            last_err = str(e)
+    if data is None:
+        return {
+            "ok": False,
+            "err": last_err or "request failed",
+            "learning_curve": [],
+            "derived": None,
+            "rewards": [],
+            "steps": [],
+            "note": None,
+        }
     if not isinstance(data, dict):
-        return {"ok": True, "err": None, "learning_curve": [], "derived": None, "rewards": [], "note": None}
+        return {
+            "ok": True,
+            "err": None,
+            "learning_curve": [],
+            "derived": None,
+            "rewards": [],
+            "steps": [],
+            "note": None,
+        }
     lc = data.get("learning_curve") or []
-    d = data.get("derived")
     return {
         "ok": True,
         "err": None,
         "learning_curve": lc if isinstance(lc, list) else [],
-        "derived": d if isinstance(d, dict) else None,
+        "derived": data.get("derived") if isinstance(data.get("derived"), dict) else None,
         "rewards": list(data.get("rewards") or []),
+        "steps": list(data.get("steps") or []),
         "note": data.get("note"),
     }
-
-
-def _iter_labels(raw_lc: List[Dict[str, Any]]) -> List[int]:
-    out: List[int] = []
-    for i, row in enumerate(raw_lc):
-        it = row.get("iteration")
-        if it is not None:
-            try:
-                out.append(int(it))
-            except (TypeError, ValueError):
-                out.append(i + 1)
-        else:
-            out.append(i + 1)
-    return out
 
 
 def _safe_post(url: str, json_body: dict, timeout: float = 30.0) -> Optional[dict]:
@@ -263,15 +274,23 @@ def _global_dashboard_css() -> str:
 
 
 def _build_reward_plotly(
-    step_numbers: List[int],
+    step_numbers: List[Any],
     curve_data: List[float],
     smoothed: List[float],
     *,
     dark: bool = False,
+    xaxis_title: str = "Trainer step",
+    yaxis_title: str = "Reward",
+    smooth_name: str = "Smoothed (rolling)",
+    peak_step: Optional[int] = None,
+    peak_reward: Optional[float] = None,
 ) -> go.Figure:
-    peak_i = int(np.argmax(smoothed)) if smoothed else 0
-    peak_x = step_numbers[peak_i] if step_numbers else 0
-    peak_y = float(smoothed[peak_i]) if smoothed else 0.0
+    if peak_step is not None and peak_reward is not None:
+        peak_x, peak_y = int(peak_step), float(peak_reward)
+    else:
+        peak_i = int(np.argmax(curve_data)) if curve_data else 0
+        peak_x = step_numbers[peak_i] if step_numbers and peak_i < len(step_numbers) else 0
+        peak_y = float(curve_data[peak_i]) if curve_data and peak_i < len(curve_data) else 0.0
     fg = "#e2e8f0" if dark else "#0f172a"
     ann_bg = "rgba(30,41,59,0.95)" if dark else "rgba(255, 255, 255, 0.95)"
     ann_brd = "rgba(148,163,184,0.35)" if dark else "#e2e8f0"
@@ -291,7 +310,7 @@ def _build_reward_plotly(
             mode="lines",
             name="Raw",
             line=dict(color=raw_line, width=1),
-            hovertemplate="RL iter %{x}<br>Raw reward %{y:.3f}<extra></extra>",
+            hovertemplate="Step %{x}<br>Raw reward %{y:.3f}<extra></extra>",
         )
     )
     fig.add_trace(
@@ -299,9 +318,9 @@ def _build_reward_plotly(
             x=step_numbers,
             y=smoothed,
             mode="lines",
-            name="Smoothed (5-iter)",
+            name=smooth_name,
             line=dict(color=m_line, width=3.2),
-            hovertemplate="RL iter %{x}<br>Smoothed reward %{y:.3f}<extra></extra>",
+            hovertemplate="Step %{x}<br>Smoothed %{y:.3f}<extra></extra>",
         )
     )
     fig.add_trace(
@@ -309,9 +328,9 @@ def _build_reward_plotly(
             x=[peak_x],
             y=[peak_y],
             mode="markers",
-            name="Peak (smoothed)",
+            name="Peak (raw reward max)",
             marker=dict(size=14, color=m_peak, line=dict(color=m_ring, width=2)),
-            hovertemplate="Peak · RL iter %{x}<br>reward %{y:.3f}<extra></extra>",
+            hovertemplate="Peak → step %{x}<br>reward %{y:.3f}<extra></extra>",
         )
     )
     fig.add_vline(
@@ -324,7 +343,7 @@ def _build_reward_plotly(
         x=peak_x,
         y=peak_y,
         xanchor="left",
-        text=f"Peak {peak_y:.2f} @ RL iter {peak_x}",
+        text=f"Peak {peak_y:.2f} @ step {peak_x}",
         showarrow=True,
         arrowhead=1,
         ax=32,
@@ -345,8 +364,8 @@ def _build_reward_plotly(
             x=1,
             bgcolor=leg_bg,
         ),
-        xaxis_title="RL iteration",
-        yaxis_title="Reward (avg)",
+        xaxis_title=xaxis_title,
+        yaxis_title=yaxis_title,
         xaxis=dict(
             gridcolor=grid,
             zerolinecolor=grid,
@@ -566,120 +585,112 @@ with tab_live:
 
 
 # === Tab 2: Training Progress ======================================================
-def _iter_labels(raw_lc: List[Dict[str, Any]]) -> List[int]:
-    out: List[int] = []
-    for i, row in enumerate(raw_lc):
-        it = row.get("iteration")
-        if it is not None:
-            try:
-                out.append(int(it))
-            except (TypeError, ValueError):
-                out.append(i + 1)
-        else:
-            out.append(i + 1)
-    return out
-
-
 with tab_train:
-    with st.spinner("Loading `/rl/learning-curve`…"):
-        res = _fetch_rl_learning_curve(ENV_BASE_URL)
+    st.caption("Data source: FastAPI `GET /training-curve` → `project/data/learning_curve.json` (re-read on each request).")
+
+    with st.spinner("Loading /training-curve…"):
+        res = _fetch_training_curve(ENV_BASE_URL)
+
+    steps: List[int] = []
+    rewards: List[float] = []
+    for s in res.get("steps") or []:
+        try:
+            steps.append(int(s))
+        except (TypeError, ValueError):
+            pass
+    for v in res.get("rewards") or []:
+        try:
+            rewards.append(float(v))
+        except (TypeError, ValueError):
+            pass
+    n_pts = min(len(steps), len(rewards))
+    steps = steps[:n_pts]
+    rewards = rewards[:n_pts]
+    if len(steps) != len(rewards) and n_pts:
+        st.error("API returned mismatched `steps` / `rewards` lengths — not plotting.")
+
+    with st.expander("Debug: steps & rewards (from API, no client-side fill)", expanded=False):
+        st.write(f"n={len(steps)}")
+        st.json({"steps": steps, "rewards": rewards})
 
     if not res.get("ok"):
-        st.error("⚠️ Unable to load training data")
+        st.error("Unable to load training data from the API.")
         st.caption(str(res.get("err", "Request failed")))
 
-    raw_lc = [x for x in (res.get("learning_curve") or []) if isinstance(x, dict)]
-    derived: Optional[Dict[str, Any]] = res.get("derived")
-    n_curve = len(raw_lc)
-    ready = bool(res.get("ok")) and n_curve >= 1 and isinstance(derived, dict) and bool(derived)
+    elif not steps:
+        st.error("⛔ No training points on the server — `learning_curve.json` is empty or missing in the API image.")
+        st.info("Export **`project/data/learning_curve.json`** from Colab / `model_training`, commit, **redeploy the API Space**; or `POST /upload-training-log` with `CPB_TRAINING_UPLOAD_TOKEN` + `X-CPB-Token`.")
 
-    if res.get("ok") and not ready:
-        if n_curve == 0:
-            st.warning("⚠️ No learning-curve rows on the API yet.")
-            st.info(
-                "After **model_training** / Colab, put **`project/data/learning_curve.json`** in the repo "
-                "(same file your run writes), commit, and **redeploy the API Space** — the UI only reads data from that deployment."
-            )
-        else:
-            st.warning("⚠️ Learning curve on the API is not in the expected format (JSON array of per-iteration objects).")
+    elif len(steps) < 3:
+        st.info(
+            "Training just started — run **≥10** GRPO / trainer steps, export `project/data/learning_curve.json` "
+            "and redeploy the **API** (or upload via `POST /upload-training-log`). "
+            f"**Current points: {len(steps)}** (need ≥3 to plot without misleading line)."
+        )
         if res.get("note"):
             st.caption(str(res["note"]))
 
-    if res.get("ok") and ready and derived is not None:
-        curve_data = [float(p.get("avg_reward", 0.0) or 0.0) for p in raw_lc]
-        n_pts = len(curve_data)
-        step_numbers = _iter_labels(raw_lc)
-        if len(step_numbers) != n_pts:
-            step_numbers = list(range(1, max(n_pts, 1) + 1))[:n_pts] if n_pts else []
-
-        sm_api = derived.get("smoothed_rewards")
-        if (
-            isinstance(sm_api, list)
-            and len(sm_api) == len(curve_data)
-            and all(isinstance(x, (int, float)) for x in sm_api)
-        ):
-            smoothed: List[float] = [float(x) for x in sm_api]
+    else:
+        derived: Optional[Dict[str, Any]] = res.get("derived")
+        if not isinstance(derived, dict) or not derived:
+            st.error("API returned no `derived` block — cannot show metrics (check server logs).")
         else:
-            smoothed = (
-                pd.Series(curve_data).rolling(window=5, min_periods=1).mean().tolist() if curve_data else []
-            )
-
-        if len(curve_data) < 1 or len(smoothed) != len(curve_data) or not step_numbers:
-            st.warning("Learning curve is incomplete — cannot show metrics or chart.")
-        else:
-            if n_pts < 5 and res.get("note"):
-                st.caption(str(res["note"]))
-            mcols = st.columns(4)
-            mi = 0
-            if "first_5_avg_reward" in derived and derived.get("first_5_avg_reward") is not None:
-                with mcols[mi % 4]:
-                    st.metric(
-                        "Initial reward (first-5 mean)",
-                        f"{float(derived['first_5_avg_reward']):.2f}",
-                    )
-                mi += 1
-            if derived.get("peak_reward") is not None and derived.get("peak_reward_iteration") is not None:
-                with mcols[mi % 4]:
-                    st.metric(
-                        "Peak reward",
-                        f"{float(derived['peak_reward']):.2f}",
-                        f"RL iter {derived['peak_reward_iteration']}",
-                    )
-                mi += 1
-            if derived.get("peak_success_rate") is not None:
-                with mcols[mi % 4]:
-                    st.metric(
-                        "Best batch",
-                        f"{float(derived['peak_success_rate']):.0%}",
-                        f"RL iter {int(derived.get('peak_success_iteration') or 0)}" if derived.get("peak_success_iteration") is not None else None,
-                    )
-                mi += 1
-            if derived.get("last_10_avg_success") is not None:
-                with mcols[mi % 4]:
-                    st.metric(
-                        "Last 10 avg",
-                        f"{float(derived['last_10_avg_success']):.0%}",
-                    )
-                mi += 1
-            if "consistency_score" in derived and derived.get("consistency_score") is not None:
-                with mcols[mi % 4]:
-                    st.metric(
-                        "Consistency (last 10 steps)",
-                        str(derived["consistency_score"]),
-                    )
-
-            tr = derived.get("trend")
-            if tr:
-                st.caption(
-                    f"{int(derived.get('total_iterations', n_pts) or n_pts)} iterations · {tr}"
-                )
+            w = int(derived.get("smoothing_window", 5))
+            sml = derived.get("smoothed_rewards")
+            if isinstance(sml, list) and len(sml) == len(rewards) and all(
+                isinstance(x, (int, float)) for x in sml
+            ):
+                smoothed: List[float] = [float(x) for x in sml]
             else:
-                st.caption(f"{n_pts} RL iterations (API logs)")
+                win = 5 if len(rewards) >= 5 else 3
+                smoothed = (
+                    pd.Series(rewards)
+                    .rolling(window=win, min_periods=1)
+                    .mean()
+                    .tolist()
+                )
+            peak_s = derived.get("peak_step")
+            peak_r = derived.get("peak_reward")
+            try:
+                pstep = int(peak_s) if peak_s is not None else None
+            except (TypeError, ValueError):
+                pstep = None
+            try:
+                prew = float(peak_r) if peak_r is not None else None
+            except (TypeError, ValueError):
+                prew = None
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                st.metric("Initial (mean of first 3)", f"{float(derived.get('initial_reward', 0)):+.4f}")
+            with c2:
+                st.metric("Final reward (last point)", f"{float(derived.get('final_reward', 0)):+.4f}")
+            with c3:
+                st.metric("Peak reward (max of raw)", f"{float(derived.get('peak_reward', 0)):+.4f}", f"step {derived.get('peak_step', '—')}")
+            with c4:
+                st.metric("Points in file", str(int(derived.get("total_points", n_pts) or 0)))
+            if derived.get("peak_success_rate") is not None and derived.get("initial_success_mean") is not None:
+                s1, s2 = st.columns(2)
+                with s1:
+                    st.metric("Success (initial mean)", f"{float(derived['initial_success_mean']):.0%}")
+                with s2:
+                    st.metric("Success (last point)", f"{float(derived.get('final_success', 0)):.0%}")
+            st.caption(str(derived.get("trend", "")))
+            if res.get("note"):
+                st.caption(str(res["note"]))
 
-            st.markdown("#### Learning curve (raw + smoothed, from API)")
+            st.markdown("#### Learning curve (raw + smoothed, from your log file)")
             _train_dark = _streamlit_is_dark()
+            sm_name = f"Smoothed (rolling, window={w})"
             fig = _build_reward_plotly(
-                step_numbers, curve_data, smoothed, dark=_train_dark
+                steps,
+                rewards,
+                smoothed,
+                dark=_train_dark,
+                xaxis_title="Trainer step",
+                yaxis_title="Reward",
+                smooth_name=sm_name,
+                peak_step=pstep,
+                peak_reward=prew,
             )
             st.plotly_chart(
                 fig,
@@ -687,8 +698,7 @@ with tab_train:
                 config={"displayModeBar": True, "displaylogo": False, "modeBarButtonsToRemove": ["lasso2d", "select2d"]},
             )
             st.caption(
-                f"RL iteration range {step_numbers[0] if step_numbers else '—'}"
-                f"–{step_numbers[-1] if step_numbers else '—'}"
+                f"Step range: {steps[0]} – {steps[-1]} (from `learning_curve.json` rows, not array index)"
             )
 
 # === Tab 3: Benchmark ==============================================================

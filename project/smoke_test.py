@@ -27,7 +27,7 @@ from .utils import DATA_DIR, TASKS_PATH, write_json  # noqa: E402
 
 def main() -> None:
     routes = {r.path for r in app.routes}
-    for required in {"/health", "/project", "/rl/learning-curve", "/tasks", "/benchmark"}:
+    for required in {"/health", "/project", "/rl/learning-curve", "/training-curve", "/tasks", "/benchmark"}:
         assert required in routes, f"Missing API route: {required}"
 
     original_tasks = TASKS_PATH.read_text(encoding="utf-8") if TASKS_PATH.exists() else None

@@ -6,7 +6,7 @@ import logging
 import os
 import time
 import uuid
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import Body, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, TypeAdapter, ValidationError
@@ -45,6 +45,8 @@ def root():
         "health": "/health",
         "project": "/project",
         "rl_learning_curve": "/rl/learning-curve",
+        "training_curve": "/training-curve",
+        "upload_training_log": "POST /upload-training-log (header X-CPB-Token when CPB_TRAINING_UPLOAD_TOKEN is set)",
         "stats_failure_breakdown": "/stats/failure-breakdown",
         "stats_best_episode": "/stats/best-episode",
         "tasks": "/tasks",
@@ -98,81 +100,165 @@ def health():
     return {"status": "ok", "version": APP_VERSION, "service": "CompliancePatchBench"}
 
 
-def _tail_mean(seq: List[float], k: int) -> float:
-    if not seq:
-        return 0.0
-    n = min(int(k), len(seq))
-    return sum(seq[-n:]) / n
+def _normalize_learning_curve_rows(raw: Any) -> List[Dict[str, Any]]:
+    """
+    Accept Colab / trainer exports as either:
+    - [{"step": 5, "reward": 0.1}, ...]  or
+    - [{"iteration": 0, "avg_reward": 1.2, ...}, ...]  (RL trainer schema)
+    - [0.1, 0.2, ...]  (reward-only; step defaults to index)
+    Returns rows sorted by trainer step, with "step" and "avg_reward" set.
+    """
+    if not isinstance(raw, list) or not raw:
+        return []
+    out: List[Dict[str, Any]] = []
+    for i, item in enumerate(raw):
+        if isinstance(item, (int, float)) and not isinstance(item, bool):
+            v = float(item)
+            out.append({"step": i, "reward": v, "avg_reward": v})
+        elif isinstance(item, dict):
+            s = item.get("step", item.get("trainer_step", item.get("global_step", item.get("iteration"))))
+            if s is None:
+                s = i
+            try:
+                step_v = int(float(s))
+            except (TypeError, ValueError):
+                step_v = i
+            r = item.get("reward", item.get("avg_reward"))
+            if r is None:
+                rv = 0.0
+            else:
+                try:
+                    rv = float(r)
+                except (TypeError, ValueError):
+                    rv = 0.0
+            row = {**item, "step": step_v, "reward": rv, "avg_reward": item.get("avg_reward", rv)}
+            out.append(row)
+    out.sort(key=lambda d: (int(d.get("step", 0)), id(d)))
+    return out
 
 
-def _rl_learning_curve_derived(curve: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """Rolling stats and peak metrics from real logged training curve only."""
-    n = len(curve)
-    rewards = [float(c.get("avg_reward", 0.0) or 0.0) for c in curve]
-    succ = [float(c.get("success_rate", c.get("train_success_rate", 0.0)) or 0.0) for c in curve]
-
-    def _roll5_trailing(y: List[float]) -> List[float]:
-        out: List[float] = []
-        for i in range(len(y)):
-            lo = max(0, i - 4)
-            w = y[lo : i + 1]
-            out.append(sum(w) / len(w))
-        return out
-
-    sm = _roll5_trailing(rewards)
-
-    k = min(10, n)
-    last_10 = sum(rewards[-k:]) / k if n else 0.0
-    first_5 = sum(rewards[:5]) / min(5, n) if n else 0.0
-    best_ri = max(range(n), key=lambda i: rewards[i]) if n else 0
-    peak_rew = float(rewards[best_ri]) if n else 0.0
-    it = curve[best_ri].get("iteration")
-    if it is None:
-        it = best_ri
-    try:
-        peak_iter = int(it)
-    except (TypeError, ValueError):
-        peak_iter = best_ri
-    peak_s = max(succ) if succ else 0.0
-    best_si = max(range(n), key=lambda i: succ[i]) if n else 0
-    best_s_iter_raw = curve[best_si].get("iteration") if n else 0
-    try:
-        best_s_iter = int(best_s_iter_raw)
-    except (TypeError, ValueError):
-        best_s_iter = best_si
-    if last_10 > first_5 + 0.05:
-        trend = "improving (last-10 mean above first-5 mean)"
+def _compute_training_derived(
+    rows: List[Dict[str, Any]], steps: List[int], rewards: List[float]
+) -> Dict[str, Any]:
+    """Metrics from real rewards only (no placeholders). Window 5 or 3 for smoothing."""
+    n = len(rewards)
+    if n < 1:
+        return {}
+    w = 5 if n >= 5 else 3
+    w = min(w, n)
+    smoothed: List[float] = []
+    for i in range(n):
+        lo = max(0, i - w + 1)
+        chunk = rewards[lo : i + 1]
+        smoothed.append(sum(chunk) / len(chunk))
+    k3 = min(3, n)
+    initial_reward = float(sum(rewards[:k3]) / k3)
+    final_reward = float(rewards[-1])
+    peak_i = int(max(range(n), key=lambda j: rewards[j]))
+    peak_reward = float(rewards[peak_i])
+    peak_step = int(steps[peak_i]) if peak_i < len(steps) else int(steps[-1] if steps else 0)
+    if final_reward > initial_reward + 1e-9:
+        trend = "improving (final > mean of first 3)"
+    elif final_reward < initial_reward - 1e-9:
+        trend = "declining or converging down"
     else:
-        trend = f"stabilizing after peak at iteration {peak_iter}"
-
-    kcons = min(10, n)
-    tail = curve[-kcons:] if n else []
-    consistency_successes = 0
-    for row in tail:
-        if not isinstance(row, dict):
-            continue
-        sr = float(row.get("success_rate", row.get("train_success_rate", 0.0)) or 0.0)
-        if sr >= 0.5:
-            consistency_successes += 1
-    consistency_total = kcons
-    consistency_pct = (consistency_successes / consistency_total) if consistency_total else 0.0
-    consistency_score = f"{consistency_successes}/{consistency_total} iterations above 50% task success"
-
-    return {
-        "smoothed_rewards": [float(x) for x in sm],
-        "peak_reward": peak_rew,
-        "peak_reward_iteration": peak_iter,
-        "peak_success_rate": float(peak_s),
-        "peak_success_iteration": best_s_iter,
-        "last_10_avg_reward": float(last_10),
-        "last_10_avg_success": float(_tail_mean(succ, 10)),
-        "first_5_avg_reward": float(first_5),
+        trend = "flat (first-3 mean ≈ final)"
+    d: Dict[str, Any] = {
+        "smoothed_rewards": smoothed,
+        "smoothing_window": w,
+        "initial_reward": initial_reward,
+        "final_reward": final_reward,
+        "peak_reward": peak_reward,
+        "peak_step": peak_step,
         "trend": trend,
-        "total_iterations": n,
-        "consistency_successes": consistency_successes,
-        "consistency_total": consistency_total,
-        "consistency_score": consistency_score,
-        "consistency_pct": float(consistency_pct),
+        "total_points": n,
+    }
+    if rows and all(
+        isinstance(r, dict) and (r.get("success_rate") is not None or r.get("train_success_rate") is not None)
+        for r in rows
+    ):
+        succ: List[float] = []
+        for r in rows:
+            v = r.get("success_rate", r.get("train_success_rate", 0.0))
+            try:
+                succ.append(float(v) if v is not None else 0.0)
+            except (TypeError, ValueError):
+                succ.append(0.0)
+        d["initial_success_mean"] = float(sum(succ[:k3]) / k3) if k3 else 0.0
+        d["final_success"] = float(succ[-1])
+        d["peak_success_rate"] = float(max(succ)) if succ else 0.0
+    return d
+
+
+def _training_curve_payload() -> Dict[str, Any]:
+    """
+    Read project/data/learning_curve.json on every request (no cache).
+    Returns steps, rewards, normalized rows, derived (only if ≥3 points).
+    """
+    path = PROJECT_DATA / "learning_curve.json"
+    raw = _read_json_if_exists(path, [])
+    n_raw = len(raw) if isinstance(raw, list) else 0
+    LOGGER.info("Loaded training curve: %d raw rows from %s", n_raw, path)
+    print(f"Loaded training curve with {n_raw} points", flush=True)
+    policy = _read_json_if_exists(PROJECT_DATA / "tabular_rl_policy.json", {})
+    tab_buckets = len((policy or {}).get("q", {})) if isinstance(policy, dict) else 0
+
+    if not n_raw:
+        return {
+            "steps": [],
+            "rewards": [],
+            "learning_curve": [],
+            "derived": None,
+            "note": "No data: `project/data/learning_curve.json` is missing or empty. Export it from training and redeploy the API (or POST /upload-training-log with token).",
+            "tabular_policy_buckets": tab_buckets,
+            "source_file": "project/data/learning_curve.json",
+        }
+
+    rows = _normalize_learning_curve_rows(raw)
+    n = len(rows)
+    if n == 0:
+        return {
+            "steps": [],
+            "rewards": [],
+            "learning_curve": [],
+            "derived": None,
+            "note": "Invalid format: expected a JSON array of training points.",
+            "tabular_policy_buckets": tab_buckets,
+            "source_file": "project/data/learning_curve.json",
+        }
+
+    steps = [int(r["step"]) for r in rows]
+    rewards = [float(r.get("avg_reward", r.get("reward", 0.0)) or 0.0) for r in rows]
+    if len(set(rewards)) == 1 and n > 1:
+        note = "All logged rewards are identical in this file — the curve is flat in the data (not a UI bug). Run a longer or varied training run for a trend."
+    else:
+        note = None
+
+    if n < 3:
+        combined_note = "Training just started — run ≥10 GRPO / trainer steps, export `project/data/learning_curve.json`, redeploy. Need at least 3 points to plot a curve here."
+        if note:
+            combined_note = f"{note} {combined_note}"
+        return {
+            "steps": steps,
+            "rewards": rewards,
+            "learning_curve": rows,
+            "derived": None,
+            "note": combined_note,
+            "tabular_policy_buckets": tab_buckets,
+            "source_file": "project/data/learning_curve.json",
+        }
+
+    derived = _compute_training_derived(rows, steps, rewards)
+    if n < 10 and not note:
+        note = f"Only {n} point(s) logged. Prefer 10+ trainer steps in `learning_curve.json` for a clear learning signal."
+    return {
+        "steps": steps,
+        "rewards": rewards,
+        "learning_curve": rows,
+        "derived": derived,
+        "note": note,
+        "tabular_policy_buckets": tab_buckets,
+        "source_file": "project/data/learning_curve.json",
     }
 
 
@@ -222,6 +308,8 @@ def project_summary():
             "tasks": "/tasks",
             "benchmark": "/benchmark",
             "rl_learning_curve": "/rl/learning-curve",
+            "training_curve": "/training-curve",
+            "upload_training_log": "POST /upload-training-log (requires CPB_TRAINING_UPLOAD_TOKEN)",
             "stats_failure_breakdown": "/stats/failure-breakdown",
             "stats_best_episode": "/stats/best-episode",
             "patch_reset": "/patch/reset",
@@ -230,39 +318,49 @@ def project_summary():
     }
 
 
+@app.get("/training-curve")
+def get_training_curve():
+    """Authoritative training series: `steps` + `rewards` from `learning_curve.json` (re-read every request)."""
+    return _training_curve_payload()
+
+
 @app.get("/rl/learning-curve")
 def rl_learning_curve():
-    curve = _read_json_if_exists(PROJECT_DATA / "learning_curve.json", [])
-    policy = _read_json_if_exists(PROJECT_DATA / "tabular_rl_policy.json", {})
+    """Backward-compatible alias; same body as `GET /training-curve` (no duplicate logic)."""
+    p = _training_curve_payload()
+    # Legacy clients expect `rewards` parallel to `learning_curve` (already present) + flat list
+    return p
 
-    if curve and isinstance(curve[0], dict):
-        rewards = [float(p.get("avg_reward", 0.0)) for p in curve]
-    else:
-        rewards = [float(x) for x in curve] if curve else []
 
-    dict_curve = bool(curve and isinstance(curve, list) and isinstance(curve[0], dict))
-    n = len(curve) if isinstance(curve, list) else 0
-    if dict_curve and n >= 1:
-        derived = _rl_learning_curve_derived([c for c in curve if isinstance(c, dict)])
-        # Real short runs (e.g. Colab dry_run with 2 iterations) still get metrics + graph;
-        # nudge when fewer than 5 points so judges know a longer run is possible.
-        note: Optional[str] = None
-        if n < 5:
-            note = (
-                f"Short run: {n} RL iteration(s) in learning_curve.json. "
-                "Run ≥5 GRPO iterations for a fuller trend, export project/data, redeploy the API."
-            )
-    else:
-        derived = None
-        note = "Insufficient training data. Add dict rows to learning_curve.json (from rl_training_log / training)."
+@app.post("/upload-training-log")
+async def upload_training_log(
+    x_cpb_token: Optional[str] = Header(default=None, alias="X-CPB-Token"),
+    body: Any = Body(...),
+):
+    """
+    Push a JSON array of points (or `{\"learning_curve\": [...] }`) to replace `learning_curve.json`.
+    Set Space secret `CPB_TRAINING_UPLOAD_TOKEN` and send the same value in header `X-CPB-Token`.
+    """
+    expected = (os.environ.get("CPB_TRAINING_UPLOAD_TOKEN") or "").strip()
+    if not expected:
+        raise HTTPException(
+            status_code=503,
+            detail="Upload disabled. Set `CPB_TRAINING_UPLOAD_TOKEN` on the server to enable POST.",
+        )
+    if (x_cpb_token or "").strip() != expected:
+        raise HTTPException(status_code=403, detail="Invalid or missing `X-CPB-Token` header.")
 
-    return {
-        "learning_curve": curve,
-        "rewards": rewards,
-        "derived": derived,
-        "note": note,
-        "tabular_policy_buckets": len((policy or {}).get("q", {})) if isinstance(policy, dict) else 0,
-    }
+    if isinstance(body, dict) and "learning_curve" in body:
+        body = body.get("learning_curve")
+    if not isinstance(body, list):
+        raise HTTPException(status_code=400, detail="Body must be a JSON array of points.")
+    out_path = PROJECT_DATA / "learning_curve.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with out_path.open("w", encoding="utf-8") as f:
+        json.dump(body, f, indent=2)
+    LOGGER.info("Wrote %d training points to %s via upload", len(body), out_path)
+    print(f"upload-training-log: wrote {len(body)} points to {out_path}", flush=True)
+    return {"ok": True, "wrote": len(body), "path": "project/data/learning_curve.json"}
 
 
 def _classify_per_task_row(row: Dict[str, Any]) -> str:

@@ -1,27 +1,37 @@
-# DEMO TRACE — one task, step-by-step (trained policy, real env rewards)
-# Shows *reasoning* through actions, not just aggregate scores.
+# Step-by-step demo trace (strong task + readable lines)
 from environment.patch_env import CompliancePatchEnv
 from project.utils import clip_model_json_output
+from project.demo_trace import (
+    DEMO_MAX_STEPS,
+    format_demo_step_line,
+    print_demo_task_header,
+    print_final_demo_block,
+    select_demo_task,
+)
 import torch, json
 
-demo_task = tasks[0]
+demo_task = select_demo_task(tasks)
+print_demo_task_header(demo_task)
 env = CompliancePatchEnv()
-env.reset(demo_task['task_id'], demo_task['codebase'], demo_task['violations'])
-
-print('DEMO TRACE (single episode)')
-print('Task:', demo_task['task_id'])
-for v in demo_task['violations']:
-    print(f"  Violation: {v['rule_id']} in {v['file']} line {v['line_start']}")
+env.reset(
+    demo_task["task_id"],
+    demo_task["codebase"],
+    demo_task["violations"],
+    max_steps=min(20, int(demo_task.get("max_steps", 20))),
+    file_reads_remaining=int(demo_task.get("file_reads_remaining", 5)),
+)
 
 messages = [
-    {'role': 'system', 'content': SYSTEM_PROMPT},
-    {'role': 'user', 'content': build_prompt(demo_task, PROMPT_CLOSING_LINES[0]).split('---\n\n', 1)[-1]},
+    {"role": "system", "content": SYSTEM_PROMPT},
+    {"role": "user", "content": build_prompt(demo_task, PROMPT_CLOSING_LINES[0]).split("---\n\n", 1)[-1]},
 ]
 
-print('\n=== Step | action | step_reward | result (excerpt) ===')
-for step in range(10):
+print("------------------------------------------------------------")
+print("## EPISODE TRACE")
+print("------------------------------------------------------------")
+for step in range(DEMO_MAX_STEPS):
     text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-    inputs = tokenizer(text, return_tensors='pt').to(model.device)
+    inputs = tokenizer(text, return_tensors="pt").to(model.device)
     with torch.no_grad():
         out = model.generate(
             **inputs,
@@ -29,18 +39,18 @@ for step in range(10):
             temperature=0.1,
             do_sample=True,
             pad_token_id=tokenizer.pad_token_id,
-            eos_token_id=[tokenizer.eos_token_id, tokenizer.encode('}', add_special_tokens=False)[-1]],
+            eos_token_id=tokenizer.eos_token_id,
         )
-    completion = tokenizer.decode(out[0][inputs['input_ids'].shape[1]:], skip_special_tokens=True)
+    completion = tokenizer.decode(out[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True)
     completion = clip_model_json_output(completion)
     actions = parse_json_actions(completion)
-    action = actions[0] if actions else {'action_type': 'finalize_patch'}
+    action = actions[0] if actions else {"action_type": "finalize_patch"}
     obs, r, done, info = env.step(action)
-    print(f'Step {step+1:2d} | {str(action.get("action_type", "?")):14s} | r={r:+.3f} | {obs["action_result"][:80]}')
-    messages.append({'role': 'assistant', 'content': completion})
-    messages.append({'role': 'user', 'content': f'Result: {obs["action_result"][:150]}'})
-    if done or action.get('action_type') == 'finalize_patch':
-        print(f'\nFinal result: score={info.get("final_score", 0):.4f}')
-        for c in info.get('critique', {}).get('ci_results', []):
-            print(f'  {"OK" if c["ci"]=="PASS" else "FAIL"} {c["rule_id"]}: {c.get("reason","")[:60]}')
+    print(format_demo_step_line(step + 1, action, r, obs))
+    messages.append({"role": "assistant", "content": completion})
+    messages.append({"role": "user", "content": f"Result: {str(obs.get('action_result', ''))[:150]}"})
+    if done or action.get("action_type") == "finalize_patch":
+        print_final_demo_block(info)
         break
+else:
+    print(f"  (Demo stopped: {DEMO_MAX_STEPS} step budget; no terminal state.)")

@@ -46,7 +46,7 @@ def _save_metric(
     ax.plot(it, ys, "-", linewidth=2, label=f"smoothed (window={window})")
     ax.set_xlabel("RL Iteration")
     ax.set_ylabel(ylabel)
-    ax.set_title(f"{ylabel} vs RL Iteration")
+    ax.set_title(f"{ylabel} (smoothed vs raw)")
     ax.legend()
     ax.grid(True, alpha=0.3)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -71,11 +71,11 @@ def plot_from_learning_curve(
 
     y_s = [float(r.get("success_rate", 0.0) or 0.0) for r in rows]
     su_path = out_dir / "success_curve.png"
-    _save_metric(it, y_s, "success_rate", su_path, window)
+    _save_metric(it, y_s, "Success rate", su_path, window)
 
     y_h = [float(r.get("hidden_violation_rate", 0.0) or 0.0) for r in rows]
     hi_path = out_dir / "hidden_violation_curve.png"
-    _save_metric(it, y_h, "hidden_violation_rate", hi_path, window)
+    _save_metric(it, y_h, "Hidden violation rate", hi_path, window)
 
     return (re_path, su_path, hi_path)
 

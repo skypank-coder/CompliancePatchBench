@@ -1,35 +1,82 @@
 [
-  {"iteration": 1,  "avg_reward": -0.07, "success_rate": 0.00, "valid_json_rate": 0.75},
-  {"iteration": 2,  "avg_reward": 0.10,  "success_rate": 0.25, "valid_json_rate": 0.80},
-  {"iteration": 3,  "avg_reward": 0.35,  "success_rate": 0.25, "valid_json_rate": 0.85},
-  {"iteration": 4,  "avg_reward": 0.06,  "success_rate": 0.25, "valid_json_rate": 0.80},
-  {"iteration": 5,  "avg_reward": 0.42,  "success_rate": 0.25, "valid_json_rate": 0.90},
-  {"iteration": 6,  "avg_reward": 0.13,  "success_rate": 0.25, "valid_json_rate": 0.85},
-  {"iteration": 7,  "avg_reward": 0.16,  "success_rate": 0.25, "valid_json_rate": 0.85},
-  {"iteration": 8,  "avg_reward": 0.10,  "success_rate": 0.25, "valid_json_rate": 0.85},
-  {"iteration": 9,  "avg_reward": 0.43,  "success_rate": 0.50, "valid_json_rate": 0.90},
-  {"iteration": 10, "avg_reward": -0.27, "success_rate": 0.00, "valid_json_rate": 0.70},
-  {"iteration": 11, "avg_reward": 0.10,  "success_rate": 0.25, "valid_json_rate": 0.80},
-  {"iteration": 12, "avg_reward": 0.43,  "success_rate": 0.50, "valid_json_rate": 0.90},
-  {"iteration": 13, "avg_reward": 0.16,  "success_rate": 0.25, "valid_json_rate": 0.85},
-  {"iteration": 14, "avg_reward": -0.04, "success_rate": 0.00, "valid_json_rate": 0.75},
-  {"iteration": 15, "avg_reward": 0.40,  "success_rate": 0.50, "valid_json_rate": 0.90},
-  {"iteration": 16, "avg_reward": 0.36,  "success_rate": 0.50, "valid_json_rate": 0.90},
-  {"iteration": 17, "avg_reward": 0.26,  "success_rate": 0.25, "valid_json_rate": 0.85},
-  {"iteration": 18, "avg_reward": 0.35,  "success_rate": 0.50, "valid_json_rate": 0.90},
-  {"iteration": 19, "avg_reward": 0.01,  "success_rate": 0.00, "valid_json_rate": 0.75},
-  {"iteration": 20, "avg_reward": 0.00,  "success_rate": 0.00, "valid_json_rate": 0.75},
-  {"iteration": 21, "avg_reward": 0.39,  "success_rate": 0.50, "valid_json_rate": 0.90},
-  {"iteration": 22, "avg_reward": 0.13,  "success_rate": 0.25, "valid_json_rate": 0.85},
-  {"iteration": 23, "avg_reward": 0.32,  "success_rate": 0.50, "valid_json_rate": 0.90},
-  {"iteration": 24, "avg_reward": 0.36,  "success_rate": 0.50, "valid_json_rate": 0.90},
-  {"iteration": 25, "avg_reward": 0.51,  "success_rate": 0.75, "valid_json_rate": 0.95},
-  {"iteration": 26, "avg_reward": -0.01, "success_rate": 0.00, "valid_json_rate": 0.75},
-  {"iteration": 27, "avg_reward": 0.08,  "success_rate": 0.25, "valid_json_rate": 0.80},
-  {"iteration": 28, "avg_reward": -0.01, "success_rate": 0.00, "valid_json_rate": 0.75},
-  {"iteration": 29, "avg_reward": 0.39,  "success_rate": 0.50, "valid_json_rate": 0.90},
-  {"iteration": 30, "avg_reward": -0.02, "success_rate": 0.00, "valid_json_rate": 0.75},
-  {"iteration": 31, "avg_reward": 0.29,  "success_rate": 0.25, "valid_json_rate": 0.85},
-  {"iteration": 32, "avg_reward": 0.07,  "success_rate": 0.25, "valid_json_rate": 0.80},
-  {"iteration": 33, "avg_reward": -0.19, "success_rate": 0.00, "valid_json_rate": 0.70}
+  {
+    "iteration": 0,
+    "avg_reward": 1.25,
+    "success_rate": 0.8333,
+    "valid_json_rate": 1.0,
+    "fallback_rate": 0.0,
+    "train_success_rate": 0.8333,
+    "test_success_rate": 1.0,
+    "hidden_violation_rate": 0.0,
+    "partial_fix_rate": 0.0,
+    "no_fix_rate": 0.1667,
+    "cheat_resistance": 1.0,
+    "failure_stats": {
+      "hidden_violation": 0,
+      "partial_fix": 0,
+      "no_fix": 1
+    },
+    "test_failure_stats": {
+      "hidden_violation": 0,
+      "partial_fix": 0,
+      "no_fix": 0
+    },
+    "reward_components": {
+      "reward_ci": 7.5,
+      "reward_minimal": 0.2,
+      "reward_regression": 0.0,
+      "reward_penalty": -0.2
+    },
+    "mean_length": 65.3889,
+    "terminated_length": 18.0,
+    "avg_confidence": 0.9185,
+    "high_confidence_wrong": 1,
+    "recovered_tasks": 0,
+    "total_recovered_tasks": 0,
+    "task_weight_summary": {
+      "min": 1.0,
+      "max": 1.0,
+      "adversarial_avg": 0.0
+    }
+  },
+  {
+    "iteration": 1,
+    "avg_reward": 1.25,
+    "success_rate": 0.8333,
+    "valid_json_rate": 1.0,
+    "fallback_rate": 0.0,
+    "train_success_rate": 0.8333,
+    "test_success_rate": 1.0,
+    "hidden_violation_rate": 0.0,
+    "partial_fix_rate": 0.0,
+    "no_fix_rate": 0.1667,
+    "cheat_resistance": 1.0,
+    "failure_stats": {
+      "hidden_violation": 0,
+      "partial_fix": 0,
+      "no_fix": 1
+    },
+    "test_failure_stats": {
+      "hidden_violation": 0,
+      "partial_fix": 0,
+      "no_fix": 0
+    },
+    "reward_components": {
+      "reward_ci": 7.5,
+      "reward_minimal": 0.2,
+      "reward_regression": 0.0,
+      "reward_penalty": -0.2
+    },
+    "mean_length": 47.4444,
+    "terminated_length": 18.0,
+    "avg_confidence": 0.9185,
+    "high_confidence_wrong": 1,
+    "recovered_tasks": 0,
+    "total_recovered_tasks": 0,
+    "task_weight_summary": {
+      "min": 0.45,
+      "max": 2.88,
+      "adversarial_avg": 0.0
+    }
+  }
 ]

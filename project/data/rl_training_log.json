@@ -21,7 +21,7 @@
     "use_tabular_rl": false,
     "tabular_alpha": 0.45,
     "tabular_epsilon": 0.2,
-    "exploration_temperature": 0.1
+    "exploration_temperature": 0.8
   },
   "optimization_method": "dry_run_no_weight_update",
   "train_task_ids": [

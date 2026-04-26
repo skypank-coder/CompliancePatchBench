@@ -106,10 +106,19 @@ def _read_json_if_exists(path: Path, default):
         return default
 
 
+def _load_ui_data() -> dict:
+    """Streamlit/Colab-facing copy; update project/data/ui_data.json after training."""
+    raw = _read_json_if_exists(PROJECT_DATA / "ui_data.json", {})
+    return raw if isinstance(raw, dict) else {}
+
+
 @app.get("/project")
 def project_summary():
     learning_curve = _read_json_if_exists(PROJECT_DATA / "learning_curve.json", [])
     latest = learning_curve[-1] if learning_curve else None
+    rl_log = _read_json_if_exists(PROJECT_DATA / "rl_training_log.json", {})
+    rl_cfg = rl_log.get("config") if isinstance(rl_log, dict) else None
+    ui = _load_ui_data()
     return {
         "name": "CompliancePatchBench",
         "summary": "Self-improving compliance/security patching benchmark.",
@@ -126,6 +135,8 @@ def project_summary():
             "exploration": "stochastic during RL, deterministic during evaluation",
         },
         "latest_learning_curve_point": latest,
+        "rl_training_config": rl_cfg,
+        "ui": ui,
         "endpoints": {
             "health": "/health",
             "tasks": "/tasks",
@@ -165,34 +176,46 @@ def get_tasks():
 
 @app.get("/benchmark")
 def get_benchmark():
+    ui = _load_ui_data()
+    ours = (ui or {}).get("benchmark_our_model")
+    if not isinstance(ours, dict):
+        ours = {}
+    base_tasks = [
+        {
+            "task_id": "task1_single_file",
+            "human_ceiling": 0.85,
+            "gpt4o_mini_baseline": 0.72,
+            "gpt4o_baseline": 0.85,
+            "difficulty": "easy",
+        },
+        {
+            "task_id": "task2_django_app",
+            "human_ceiling": 0.74,
+            "gpt4o_mini_baseline": 0.38,
+            "gpt4o_baseline": 0.56,
+            "difficulty": "medium",
+        },
+        {
+            "task_id": "task3_microservices",
+            "human_ceiling": 0.44,
+            "gpt4o_mini_baseline": 0.15,
+            "gpt4o_baseline": 0.28,
+            "difficulty": "hard",
+        },
+    ]
+    for row in base_tasks:
+        tid = row["task_id"]
+        if tid in ours and ours[tid] is not None:
+            try:
+                row["our_model"] = float(ours[tid])
+            except (TypeError, ValueError):
+                pass
     return {
         "environment": "compliancepatchbench",
         "non_cheatable": True,
         "hidden_constraints": True,
         "policy_optimization": ["heuristic baseline", "SFT initialization", "TRL GRPO"],
-        "tasks": [
-            {
-                "task_id": "task1_single_file",
-                "human_ceiling": 0.85,
-                "gpt4o_mini_baseline": 0.72,
-                "gpt4o_baseline": 0.85,
-                "difficulty": "easy",
-            },
-            {
-                "task_id": "task2_django_app",
-                "human_ceiling": 0.74,
-                "gpt4o_mini_baseline": 0.38,
-                "gpt4o_baseline": 0.56,
-                "difficulty": "medium",
-            },
-            {
-                "task_id": "task3_microservices",
-                "human_ceiling": 0.44,
-                "gpt4o_mini_baseline": 0.15,
-                "gpt4o_baseline": 0.28,
-                "difficulty": "hard",
-            },
-        ],
+        "tasks": base_tasks,
         "grader_version": "1.0.0",
         "deterministic": True,
     }

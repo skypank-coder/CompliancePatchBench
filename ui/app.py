@@ -6,7 +6,8 @@ from __future__ import annotations
 import json
 import os
 import time
-from typing import List, Optional, Tuple
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 import requests
@@ -29,13 +30,6 @@ HF_UI_SPACE_URL = os.environ.get(
     "CPB_HF_UI_SPACE_URL",
     "https://huggingface.co/spaces/rachana05/CompliancePatchBench-UI",
 )
-
-# Spec demo copy (static educational columns)
-VIOLATION_SNIPPET = (
-    'app.logger.info(f"User {user.email} logged in from {request.remote_addr}")'
-)
-BASELINE_SNIPPET = 'app.logger.info("User logged in")'
-
 
 def _safe_get(url: str, timeout: float = 12.0) -> Optional[dict]:
     try:
@@ -62,51 +56,84 @@ def check_health(base: str) -> bool:
     return bool(data and data.get("status") == "ok")
 
 
+def fetch_project_api(base: str) -> Dict[str, Any]:
+    data = _safe_get(f"{base.rstrip('/')}/project")
+    return data if isinstance(data, dict) else {}
+
+
+def _monorepo_learning_curve_paths() -> List[str]:
+    p = Path(__file__).resolve()
+    cands: List[str] = []
+    if p.parent.name == "ui":
+        cands.append(str(p.parents[1] / "project" / "data" / "learning_curve.json"))
+    if p.parent.name == "src":
+        try:
+            cands.append(str(p.parents[3] / "project" / "data" / "learning_curve.json"))
+        except IndexError:
+            pass
+    return cands
+
+
+def _read_learning_curve_from_disk() -> Tuple[List[float], str]:
+    data_dir = os.environ.get("CPB_DATA_DIR", "").strip()
+    paths: List[str] = []
+    if data_dir:
+        paths.append(os.path.join(data_dir, "project", "data", "learning_curve.json"))
+    paths.extend(_monorepo_learning_curve_paths())
+    paths.extend(
+        [
+            "project/data/learning_curve.json",
+            "reward_curve.json",
+            "/content/CompliancePatchBench/project/data/learning_curve.json",
+            "/content/CompliancePatchBench/reward_curve.json",
+        ]
+    )
+    seen: set = set()
+    for raw in paths:
+        if not raw or raw in seen:
+            continue
+        seen.add(raw)
+        ap = os.path.abspath(os.path.normpath(raw))
+        if not os.path.isfile(ap):
+            continue
+        try:
+            with open(ap, encoding="utf-8") as f:
+                rawj = json.load(f)
+        except Exception:
+            continue
+        if isinstance(rawj, list) and rawj:
+            if isinstance(rawj[0], dict):
+                return [float(x.get("avg_reward", 0.0)) for x in rawj], ap
+            return [float(x) for x in rawj], ap
+    return [], ""
+
+
 def fetch_benchmark_table(base: str) -> Tuple[pd.DataFrame, bool]:
     data = _safe_get(f"{base.rstrip('/')}/benchmark")
     rows = []
-    our_by_diff = {"easy": 1.31, "medium": 0.89, "hard": 0.52}
     if data and isinstance(data.get("tasks"), list):
         for t in data["tasks"]:
             diff = str(t.get("difficulty", "")).lower()
+            om = t.get("our_model")
             rows.append(
                 {
                     "Task": t.get("task_id", "—"),
                     "Difficulty": diff or "—",
                     "GPT-4o": float(t.get("gpt4o_baseline", 0.0)),
                     "GPT-4o-mini": float(t.get("gpt4o_mini_baseline", 0.0)),
-                    "Our Model": our_by_diff.get(diff, 0.75),
+                    "Our Model": float(om) if om is not None else None,
                 }
             )
         return pd.DataFrame(rows), True
-    # Demo table
-    for diff, g4, mini, ours in [
-        ("easy", 0.85, 0.72, 1.31),
-        ("medium", 0.56, 0.38, 0.89),
-        ("hard", 0.28, 0.15, 0.52),
-    ]:
-        rows.append(
-            {
-                "Task": f"task_{diff}",
-                "Difficulty": diff,
-                "GPT-4o": g4,
-                "GPT-4o-mini": mini,
-                "Our Model": ours,
-            }
-        )
-    return pd.DataFrame(rows), False
+    return pd.DataFrame(), False
 
 
-def run_live_episode(base: str) -> Tuple[float, bool]:
-    """
-    Minimal live path: reset → read first file → finalize.
-    Returns (final_score, live_ok).
-    """
+def run_live_episode(base: str) -> Tuple[Optional[float], bool]:
     try:
         base = base.rstrip("/")
         r = _safe_post(f"{base}/patch/reset", {"task_id": "task1_single_file"})
         if not r or "session_id" not in r:
-            return 1.70, False
+            return None, False
         sid = r["session_id"]
         obs = r.get("observation") or {}
         files = obs.get("available_files") or ["routes.py"]
@@ -116,20 +143,20 @@ def run_live_episode(base: str) -> Tuple[float, bool]:
             {"session_id": sid, "action": {"action_type": "read_file", "path": path0}},
         )
         if not r2:
-            return 1.70, False
+            return None, False
         r3 = _safe_post(
             f"{base}/patch/step",
             {"session_id": sid, "action": {"action_type": "finalize_patch"}},
         )
         if not r3:
-            return 1.70, False
+            return None, False
         info = r3.get("info") or {}
         fin = info.get("final_score")
         if fin is not None:
             return float(fin), True
-        return 1.70, True
+        return None, True
     except Exception:
-        return 1.70, False
+        return None, False
 
 
 # --- Page -------------------------------------------------------------------------
@@ -180,9 +207,21 @@ with st.sidebar:
 if "using_demo" not in st.session_state:
     st.session_state.using_demo = not check_health(ENV_BASE_URL)
 if "final_score_demo" not in st.session_state:
-    st.session_state.final_score_demo = 1.70
+    st.session_state.final_score_demo = None
 if "last_live_ok" not in st.session_state:
     st.session_state.last_live_ok = False
+
+_project_payload: Dict[str, Any] = fetch_project_api(ENV_BASE_URL)
+_ui_block: Dict[str, Any] = _project_payload.get("ui") if isinstance(_project_payload.get("ui"), dict) else {}
+_ld = _ui_block.get("live_demo") if isinstance(_ui_block.get("live_demo"), dict) else {}
+_reward_legend: Dict[str, Any] = (
+    _ui_block.get("reward_legend") if isinstance(_ui_block.get("reward_legend"), dict) else {}
+)
+_rl_cfg: Dict[str, Any] = (
+    _project_payload.get("rl_training_config")
+    if isinstance(_project_payload.get("rl_training_config"), dict)
+    else {}
+)
 
 # ---- Tabs ------------------------------------------------------------------------
 tab_live, tab_train, tab_bench = st.tabs(
@@ -196,25 +235,43 @@ with tab_live:
         "Baselines can pass tests yet break compliance. A trained RL agent fixes code "
         "without deleting audit trails or hiding PII from hidden checks."
     )
+    vcode = str(_ld.get("violation_code") or "— (set project/data/ui_data.json and redeploy API)")
+    bcode = str(_ld.get("baseline_code") or "—")
+    rcode = str(_ld.get("rl_code") or "—")
+    rule = str(_ld.get("rule") or "—")
+    sev = str(_ld.get("severity") or "—")
+    br = _reward_legend.get("deletion_fail", -1.0)
+    gr = _reward_legend.get("good_patch_example")
+    try:
+        br_f = float(br)
+    except (TypeError, ValueError):
+        br_f = -1.0
+    try:
+        gr_f = float(gr) if gr is not None else None
+    except (TypeError, ValueError):
+        gr_f = None
+
     c1, c2, c3 = st.columns(3)
 
     with c1:
         st.markdown("#### 🚨 Violation")
-        st.code(VIOLATION_SNIPPET, language="python")
-        st.markdown("**Rule:** GDPR PII leak  \n**Severity:** HIGH")
+        st.code(vcode, language="python")
+        st.markdown(f"**Rule:** {rule}  \n**Severity:** {sev}")
 
     with c2:
         st.markdown("#### ❌ Baseline Agent")
-        st.code(BASELINE_SNIPPET, language="python")
+        st.code(bcode, language="python")
         st.error("Fails hidden constraint (loses auditability)")
-        st.metric("Reward", "-1.00")
+        st.metric("Reward (env)", f"{br_f:+.2f}")
 
     with c3:
         st.markdown("#### ✅ RL Agent")
-        rl_agent_code = "app.logger.info('User logged in id=%s', str(user.id))"
-        st.code(rl_agent_code, language="python")
+        st.code(rcode, language="python")
         st.success("Passes CI + compliance")
-        st.metric("Reward", "+1.70")
+        st.metric(
+            "Reward (reference)",
+            f"{gr_f:+.2f}" if gr_f is not None else "—",
+        )
 
     st.divider()
     if st.button("▶ Run Live Episode", type="primary", use_container_width=False):
@@ -225,12 +282,17 @@ with tab_live:
             st.session_state.final_score_demo = score
             if not live_ok:
                 st.session_state.using_demo = True
-                st.warning("Using demo data — backend error or timeout.")
+                st.warning("Could not complete live episode — check API or env.")
             else:
                 st.session_state.using_demo = False
                 st.toast("Episode finished.", icon="✅")
 
-    st.metric("Final Score", f"{st.session_state.final_score_demo:+.2f}")
+    fs = st.session_state.final_score_demo
+    if fs is not None:
+        st.metric("Final Score (live)", f"{fs:+.2f}")
+    else:
+        st.metric("Final Score (live)", "—")
+        st.caption("Run an episode to record `final_score` from the API.")
 
 
 # === Tab 2: Training Progress ======================================================
@@ -258,37 +320,13 @@ with tab_train:
     elif curve_data:
         curve_data = [float(x) for x in curve_data]
 
-    # Fallback to reward_curve.json on disk
+    # Local / Colab-exported files (same schema as project/data/learning_curve.json)
     if not curve_data or len(curve_data) < 2:
-        try:
-            for path in [
-                "reward_curve.json",
-                "/content/CompliancePatchBench/reward_curve.json",
-            ]:
-                if os.path.exists(path):
-                    with open(path, encoding="utf-8") as f:
-                        raw = json.load(f)
-                    if isinstance(raw, list) and raw:
-                        if isinstance(raw[0], dict):
-                            curve_data = [float(p.get("avg_reward", 0.0)) for p in raw]
-                        else:
-                            curve_data = [float(x) for x in raw]
-                        from_api = False
-                        data_source_note = path
-                    break
-        except Exception:
-            pass
-
-    # Hardcoded fallback from real training run if everything else fails
-    if not curve_data or len(curve_data) < 2:
-        from_api = False
-        curve_data = [
-            -0.07, 0.10, 0.35, 0.06, 0.42, 0.13, 0.16, 0.10, 0.43,
-            -0.27, 0.10, 0.43, 0.16, -0.04, 0.40, 0.36, 0.26, 0.35,
-            0.01, 0.00, 0.39, 0.13, 0.32, 0.36, 0.51, -0.01, 0.08,
-            -0.01, 0.39, -0.02, 0.29, 0.07, -0.19,
-        ]
-        data_source_note = "hardcoded training curve"
+        disk_vals, disk_path = _read_learning_curve_from_disk()
+        if disk_vals and len(disk_vals) >= 2:
+            curve_data = disk_vals
+            from_api = False
+            data_source_note = disk_path
 
     if not from_api and not check_health(ENV_BASE_URL):
         st.warning("Using demo data")
@@ -337,15 +375,25 @@ with tab_train:
         )
     else:
         st.warning(
-            "Not enough reward data points to plot curve. "
-            "Ensure the training notebook has run and reward_curve.json is up to date."
+            "No learning curve data. Run Colab training, commit `project/data/learning_curve.json`, "
+            "redeploy the API, or set CPB_DATA_DIR / place the file under project/data."
         )
 
+    del_fail = _reward_legend.get("deletion_fail", -1.0)
+    good_ex = _reward_legend.get("good_patch_example", 1.7)
+    try:
+        df_s = float(del_fail)
+    except (TypeError, ValueError):
+        df_s = -1.0
+    try:
+        gf_s = float(good_ex)
+    except (TypeError, ValueError):
+        gf_s = 1.7
     b1, b2 = st.columns(2)
     with b1:
-        st.error("❌ Deletes line → FAIL → Reward **-1.0**")
+        st.error(f"❌ Deletes line → FAIL → Reward **{df_s:+.1f}**")
     with b2:
-        st.success("✅ Proper patch → PASS → Reward **+1.7**")
+        st.success(f"✅ Proper patch → PASS → Reward **{gf_s:+.1f}** (env-dependent)")
 
     st.info("🔒 Deleting code is penalized. The model learned to fix, not cheat.")
 
@@ -353,26 +401,28 @@ with tab_train:
 # === Tab 3: Benchmark ==============================================================
 with tab_bench:
     df, ok = fetch_benchmark_table(ENV_BASE_URL)
-    if not ok:
-        st.warning("Using demo data")
-
-    try:
+    if not ok or df.empty:
+        st.warning("Backend offline or no benchmark rows — set ENV_BASE_URL to the API Space.")
+    else:
 
         def _green_our_model_col(col: pd.Series) -> List[str]:
             return ["color: #0a0; font-weight: 600"] * len(col)
 
-        st.dataframe(
-            df.style.apply(_green_our_model_col, axis=0, subset=["Our Model"]),
-            use_container_width=True,
-            hide_index=True,
-        )
-    except Exception:
-        st.dataframe(
-            df,
-            use_container_width=True,
-            hide_index=True,
-            column_config={"Our Model": st.column_config.NumberColumn("Our Model", format="%.2f")},
-        )
+        try:
+            st.dataframe(
+                df.style.apply(_green_our_model_col, axis=0, subset=["Our Model"]),
+                use_container_width=True,
+                hide_index=True,
+            )
+        except Exception:
+            st.dataframe(
+                df,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Our Model": st.column_config.NumberColumn("Our Model", format="%.2f")
+                },
+            )
 
     st.divider()
     t1, t2, t3 = st.columns(3)
@@ -380,15 +430,24 @@ with tab_bench:
         st.markdown("**Themes**")
         st.markdown("- World Modeling\n- Self-Improvement")
     with t2:
-        st.markdown("**Stack**")
-        st.markdown(
-            "- Qwen2.5-3B + Unsloth\n- GRPO RL\n- FastAPI environment"
-        )
+        st.markdown("**Stack (from API / Colab config)**")
+        bm = _rl_cfg.get("base_model") or _ui_block.get("base_model")
+        lines = []
+        if bm:
+            lines.append(f"- **Base model:** `{bm}`")
+        lines.append("- TRL GRPO / iterative RL (see `project/data/rl_training_log.json`)")
+        lines.append("- FastAPI + CompliancePatchEnv")
+        st.markdown("\n".join(lines) if lines else "— (train in Colab to populate `rl_training_log.json`)")
     with t3:
         st.markdown("**Why not cheatable**")
-        st.markdown(
-            "- deletion = **-1.0**\n- hidden constraints\n- adversarial tasks"
-        )
+        bullets = _ui_block.get("why_not_cheatable_bullets")
+        if isinstance(bullets, list) and bullets:
+            st.markdown("\n".join(f"- {b}" for b in bullets))
+        else:
+            st.markdown(
+                f"- deletion penalty ≈ **{_reward_legend.get('deletion_fail', -1.0)}**\n"
+                "- hidden constraints in env\n- adversarial tasks in pool"
+            )
 
 
 # ---- Footer ----------------------------------------------------------------------

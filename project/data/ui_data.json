@@ -1,0 +1,25 @@
+{
+  "source": "Update from Colab (evaluate + training) or project scripts; served via GET /project → ui and GET /benchmark",
+  "base_model": "Qwen2.5-3B + Unsloth (align with colab / rl_training_log when available)",
+  "live_demo": {
+    "violation_code": "app.logger.info(f\"User {user.email} logged in from {request.remote_addr}\")",
+    "baseline_code": "app.logger.info(\"User logged in\")",
+    "rl_code": "app.logger.info('User logged in id=%s', str(user.id))",
+    "rule": "GDPR PII in logs",
+    "severity": "HIGH"
+  },
+  "reward_legend": {
+    "deletion_fail": -1.0,
+    "good_patch_example": 1.7
+  },
+  "benchmark_our_model": {
+    "task1_single_file": 1.31,
+    "task2_django_app": 0.89,
+    "task3_microservices": 0.52
+  },
+  "why_not_cheatable_bullets": [
+    "deletion and hidden checks use env reward (see /project)",
+    "adversarial tasks in task pool",
+    "policy optimization with GRPO"
+  ]
+}

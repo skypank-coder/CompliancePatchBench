@@ -7,6 +7,26 @@
 
 **Canonical API Space (this monorepo’s Docker app):** `https://huggingface.co/spaces/rachana05/Compliance-patch-bench`
 
+## Push API Space vs Streamlit UI Space (monorepo)
+
+The **API** and **UI** are different Hugging Face Git repos. Pushing `main` from the monorepo root to **both** remotes is wrong for the UI: the repo’s **root** `Dockerfile` is the FastAPI server, so the Streamlit Space would build the backend image and never run Streamlit.
+
+| Target | What to push | Command (from monorepo root) |
+|--------|----------------|-----------------------------|
+| **API** (`Compliance-patch-bench`) | Full repository: `Dockerfile`, `api/`, `environment/`, `project/`, … | `git push space main` |
+| **UI** (`CompliancePatchBench-UI`) | **Only** `spaces/CompliancePatchBench-UI/` as the Space root (Streamlit `Dockerfile` + `src/`) | See below |
+
+**Streamlit UI Space** (subtree — correct root `Dockerfile` for Streamlit):
+
+```bash
+git subtree split --prefix=spaces/CompliancePatchBench-UI -b hf-ui-space
+git push ui hf-ui-space:main --force
+```
+
+Recreate `hf-ui-space` after UI changes so the split includes the latest commits. Use `--force` on the UI remote when replacing history; do **not** use the same full-repo push as the API.
+
+The UI card `README.md` in that folder must keep `short_description` **≤ 60 characters** (Hub validation).
+
 ## `ENV_BASE_URL` (frontend → backend, required for a live demo)
 
 The **Streamlit** Space is the **frontend**; the **FastAPI** Space is the **backend**. The UI’s Python code uses `ENV_BASE_URL` for all `requests` to `/health`, `/rl/learning-curve`, `/benchmark`, and patch endpoints. There is no client-side browser CORS to the API — the **Streamlit server** fetches the API.

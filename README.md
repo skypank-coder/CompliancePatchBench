@@ -369,7 +369,7 @@ CompliancePatchBench/
 - 🤗 [HF Space (live demo)](https://huggingface.co/spaces/skypank-coder/CompliancePatchBench)
 - 📓 [Colab (train / reproduce)](https://colab.research.google.com/drive/1d-rzhyYXo6LrHsMV924lUcNv3663cs-o?usp=sharing) — [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1d-rzhyYXo6LrHsMV924lUcNv3663cs-o?usp=sharing)
 - 🔧 [GitHub repo](https://github.com/skypank-coder/CompliancePatchBench)
-- 📝 Blog post: [`BLOG.md`](BLOG.md) in repository root
+- 📝 Blog post: (https://huggingface.co/spaces/rachana05/Compliance-patch-bench/blob/main/Blog.md)
 - 🏆 Hackathon: Meta PyTorch OpenEnv Hackathon 2026, Bangalore Finals
 
 *If your agent consistently scores above 0.8 on task3_microservices, it has learned something enterprise security teams would actually pay for.*

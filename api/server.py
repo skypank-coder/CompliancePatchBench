@@ -141,8 +141,15 @@ def project_summary():
 def rl_learning_curve():
     curve = _read_json_if_exists(PROJECT_DATA / "learning_curve.json", [])
     policy = _read_json_if_exists(PROJECT_DATA / "tabular_rl_policy.json", {})
+
+    if curve and isinstance(curve[0], dict):
+        rewards = [float(p.get("avg_reward", 0.0)) for p in curve]
+    else:
+        rewards = [float(x) for x in curve] if curve else []
+
     return {
         "learning_curve": curve,
+        "rewards": rewards,
         "tabular_policy_buckets": len((policy or {}).get("q", {})) if isinstance(policy, dict) else 0,
         "note": (
             "Curves show reward, success, and hidden-violation rate by RL iteration. "

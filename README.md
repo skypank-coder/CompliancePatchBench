@@ -68,6 +68,10 @@ CompliancePatchBench is **OpenEnv-compliant**: `reset()` / `step()` / `state()` 
 └─────────────────────────────────────────────────────────┘
 ```
 
+*Episode flow (read budget, `write_patch`, `run_ci`, then `finalize_patch` and hidden compliance):*
+
+![RL episode loop: violations/steps, context, read_file budget, write_patch, run_ci rewards, finalize + hidden checks](docs/assets/env-episode-loop.png)
+
 A typical episode (same interface the policy sees in training and eval):
 
 ```text
@@ -122,6 +126,10 @@ The hardest part was making the reward uncheateable.
 | Unnecessary line churn | -0.3 | Per line changed beyond the minimum needed. |
 | Deletion detected | -1.0 | Removing the flagged line always scores -1.0, even if CI passes. |
 
+*Surface CI reward vs finalization — `finalize_patch` then `hidden_compliance` can still apply penalties (e.g. weak hash PII, secret defaults, partial multi-file):*
+
+![Patch → CI → finalize_patch → hidden_compliance checks](docs/assets/patch-ci-hidden-oracle.png)
+
 **Anti-cheat, three mechanisms (by design):**
 
 1. **Deletion penalty:** -1.0 is always on the table if the model tries to “fix” by deleting. You cannot outscore the rest of the signal when this fires; that is the point of the stand-alone term.
@@ -156,6 +164,10 @@ app.logger.info('User %s logged in', str(user.id))
 | `task3_microservices` | Hard | 7 | 15 | 4 microservices |
 | `task4_django_rest` | Hard | 1 | 4 | Django REST |
 
+*Example cross-service trust break on `task3_microservices` (auth token vs downstream user fetch — OWASP-A01 / IDOR class pattern):*
+
+![Auth → user service: bearer context, tenant check, cross-service IDOR](docs/assets/cross-service-trust-idor.png)
+
 **What each ID stress-tests in one sentence (for judges cross-walking the table):** `task1_single_file` is the pure format-and-edit skill check on a single buffer — one wrong delete is visible immediately. `task2_django_app` spreads obligations across a small Django app so “fix models only” and “fix views only” are both *plausible* failure modes. `task2b_multifile_dependency` encodes a cross-file **serialization** bug where a change in one module must be consistent with a consumer in another file — a toy version of a monorepo footgun. `task3_microservices` is the only row where **four** service folders interact; the 15 ground-truth violations are there to stop a policy from memorizing a single file’s grep pattern. `task4_django_rest` is a DRF surface with a smaller file count but still four distinct issues in one module — a density check on whether the model can work where multiple OWASP and GDPR rules overlap in one class.
 
 **Why “hard” appears three times in a row:** difficulty is not only “line count” — a two-file case can be harder than a five-file one if the dependency direction is non-obvious; the read budget is what forces those cases to be hard even when the tree is shallow. A judge should not pick the “smallest” task id and assume it is a toy; pick the *microservices* id if you only have time for one.
@@ -165,6 +177,10 @@ app.logger.info('User %s logged in', str(user.id))
 ## Training Results
 
 **Model: Qwen2.5-3B-Instruct — Method: GRPO via TRL + Unsloth, 4-bit QLoRA, Colab T4 — Training: 120 real steps completed.**
+
+*Training stack: model ↔ `CompliancePatchEnv` (with `hidden_compliance` on finalize) ↔ GRPO trainer / LoRA updates:*
+
+![GRPO training: env reward, hidden checks, policy update](docs/assets/grpo-training-architecture.png)
 
 **What “120 steps” means in this project:** the trainer calls the *same* `CompliancePatchEnv` transition function you can hit on HTTP, rolls out trajectories, and backprops through TRL’s GRPO path on a LoRA-tuned head. The step count is not a synthetic inner loop on a frozen dataset — it is **real** on-policy steps against the live reward structure described above. The Colab T4 run is a budget constraint, not a simplification of the world model; the point is to show the curve moves with *compute you can actually rent*.
 

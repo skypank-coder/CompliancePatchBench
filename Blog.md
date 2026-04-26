@@ -33,13 +33,29 @@ Each episode is a small game. The agent starts with a Python codebase, a list of
 
 The agent that plays this game well is one that has learned to read, patch minimally, and verify, not to bluff.
 
+**Episode loop (violations/steps gate, read budget, `write_patch`, `run_ci`, then `finalize_patch` and hidden checks):**
+
+![CompliancePatchBench RL episode loop](docs/assets/env-episode-loop.png)
+
+On the hardest tasks, a violation is not local to one buffer. **Cross-service trust** is the story where a token minted in `auth_service` is accepted in `user_service` without the right tenant boundary — the kind of chain that static “one file at a time” fixes miss:
+
+![Cross-service IDOR / trust break (task3 microservices)](docs/assets/cross-service-trust-idor.png)
+
 ## The reward function that cannot be gamed
 
 The hardest part of this project was not the FastAPI `reset` / `step` shell. It was the reward. The most obvious exploit is **deletion**: strip the line, the pattern disappears, and a naive "CI only" score would look great. In CompliancePatchBench, **if the agent removes the flagged line without a real replacement, the deletion signal always gives -1.0**, even when something upstream still prints PASS. You cannot "accidentally" max reward by erasing the problem.
 
 The next exploit is subtler: **hash PII, wrap the log in `try/except`, or add a comment instead of a fix**. A hidden oracle looks for these shortcuts. They can pass a shallow check; they do not pass the second pass. The five reward channels are **independent** (+1.0 CI, +0.5 no regressions, +0.2 minimal AST delta, -0.3 per unnecessary line, -1.0 deletion). There is no single dial that spams a win without doing real work.
 
+**Surface CI vs finalize:** the model can look “good” on pattern checks, then lose the game when `finalize_patch` runs `hidden_compliance` — extra penalties for weak-hash PII, secret defaults, partial multi-file shortcuts, and similar.
+
+![write_patch → CI → finalize_patch → hidden_compliance](docs/assets/patch-ci-hidden-oracle.png)
+
 ## Training: what GRPO on a real environment looks like
+
+**Architecture:** the policy interacts with `CompliancePatchEnv` (`read_file`, `write_patch`, `run_ci`); rewards go to GRPO; `hidden_compliance` runs on finalize; LoRA weights update from the trainer.
+
+![GRPO training: env, hidden oracle, policy update](docs/assets/grpo-training-architecture.png)
 
 We trained **Qwen2.5-3B-Instruct** with **GRPO** in TRL on top of **Unsloth 4-bit QLoRA** on a **Colab T4** for **120** optimizer steps. The curve is not a smooth hockey stick. Real batch means: batch 1 mean reward **+0.250**, 6/12 success; batch 5 **+0.508**, 5/12; batch 15 **+1.250**, 11/12 success (best); batch 19 **+1.083**, 10/12. Batches 6-14 **collapsed toward -1.0** because **completion length was truncated at 120 tokens**, which is too short for valid `write_patch` JSON. After raising the cap to **256** tokens, batches settled in the +1.0 to +1.25 band. That ugly middle is what honest RL on a real env looks like when your infra has a bug.
 

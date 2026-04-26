@@ -98,6 +98,13 @@ def health():
     return {"status": "ok", "version": APP_VERSION, "service": "CompliancePatchBench"}
 
 
+def _tail_mean(seq: List[float], k: int) -> float:
+    if not seq:
+        return 0.0
+    n = min(int(k), len(seq))
+    return sum(seq[-n:]) / n
+
+
 def _rl_learning_curve_derived(curve: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Rolling stats and peak metrics from real logged training curve only."""
     n = len(curve)
@@ -158,7 +165,7 @@ def _rl_learning_curve_derived(curve: List[Dict[str, Any]]) -> Dict[str, Any]:
         "peak_success_rate": float(peak_s),
         "peak_success_iteration": best_s_iter,
         "last_10_avg_reward": float(last_10),
-        "last_10_avg_success": float(last_n_mean(succ, 10)),
+        "last_10_avg_success": float(_tail_mean(succ, 10)),
         "first_5_avg_reward": float(first_5),
         "trend": trend,
         "total_iterations": n,
@@ -235,12 +242,19 @@ def rl_learning_curve():
 
     dict_curve = bool(curve and isinstance(curve, list) and isinstance(curve[0], dict))
     n = len(curve) if isinstance(curve, list) else 0
-    if dict_curve and n >= 5:
+    if dict_curve and n >= 1:
         derived = _rl_learning_curve_derived([c for c in curve if isinstance(c, dict)])
+        # Real short runs (e.g. Colab dry_run with 2 iterations) still get metrics + graph;
+        # nudge when fewer than 5 points so judges know a longer run is possible.
         note: Optional[str] = None
+        if n < 5:
+            note = (
+                f"Short run: {n} RL iteration(s) in learning_curve.json. "
+                "Run ≥5 GRPO iterations for a fuller trend, export project/data, redeploy the API."
+            )
     else:
         derived = None
-        note = "Insufficient training data. Run more GRPO iterations."
+        note = "Insufficient training data. Add dict rows to learning_curve.json (from rl_training_log / training)."
 
     return {
         "learning_curve": curve,

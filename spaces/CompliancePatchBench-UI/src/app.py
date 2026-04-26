@@ -591,11 +591,17 @@ with tab_train:
     raw_lc = [x for x in (res.get("learning_curve") or []) if isinstance(x, dict)]
     derived: Optional[Dict[str, Any]] = res.get("derived")
     n_curve = len(raw_lc)
-    ready = n_curve >= 5 and isinstance(derived, dict) and bool(derived)
+    ready = bool(res.get("ok")) and n_curve >= 1 and isinstance(derived, dict) and bool(derived)
 
     if res.get("ok") and not ready:
-        st.warning("⚠️ Not enough training data yet (need **≥5** logged RL iterations on the API).")
-        st.info("Run more GRPO iterations, export `learning_curve.json` to the API, and redeploy.")
+        if n_curve == 0:
+            st.warning("⚠️ No learning-curve rows on the API yet.")
+            st.info(
+                "After **model_training** / Colab, put **`project/data/learning_curve.json`** in the repo "
+                "(same file your run writes), commit, and **redeploy the API Space** — the UI only reads data from that deployment."
+            )
+        else:
+            st.warning("⚠️ Learning curve on the API is not in the expected format (JSON array of per-iteration objects).")
         if res.get("note"):
             st.caption(str(res["note"]))
 
@@ -603,7 +609,7 @@ with tab_train:
         curve_data = [float(p.get("avg_reward", 0.0) or 0.0) for p in raw_lc]
         n_pts = len(curve_data)
         step_numbers = _iter_labels(raw_lc)
-        if len(step_numbers) != n_pts or n_pts < 5:
+        if len(step_numbers) != n_pts:
             step_numbers = list(range(1, max(n_pts, 1) + 1))[:n_pts] if n_pts else []
 
         sm_api = derived.get("smoothed_rewards")
@@ -618,9 +624,11 @@ with tab_train:
                 pd.Series(curve_data).rolling(window=5, min_periods=1).mean().tolist() if curve_data else []
             )
 
-        if len(curve_data) < 5 or len(smoothed) != len(curve_data) or not step_numbers:
+        if len(curve_data) < 1 or len(smoothed) != len(curve_data) or not step_numbers:
             st.warning("Learning curve is incomplete — cannot show metrics or chart.")
         else:
+            if n_pts < 5 and res.get("note"):
+                st.caption(str(res["note"]))
             mcols = st.columns(4)
             mi = 0
             if "first_5_avg_reward" in derived and derived.get("first_5_avg_reward") is not None:
@@ -682,11 +690,6 @@ with tab_train:
                 f"RL iteration range {step_numbers[0] if step_numbers else '—'}"
                 f"–{step_numbers[-1] if step_numbers else '—'}"
             )
-
-    st.divider()
-    st.subheader("What To Highlight")
-    st.caption("Best batch, last-10 consistency, and the clean successful reward trace are the headline signals for this run.")
-
 
 # === Tab 3: Benchmark ==============================================================
 with tab_bench:

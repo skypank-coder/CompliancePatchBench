@@ -15,7 +15,7 @@ short_description: LLM compliance patches via GRPO; reward resists gaming
 
 **Theme:** World Modeling 3.1 + Self-Improvement 4 · **Model:** Qwen2.5-3B · **Method:** GRPO + Unsloth · **Status:** Trained ✅
 
-🤗 [Live Demo on HF Space](https://huggingface.co/spaces/skypank-coder/CompliancePatchBench) · 📓 [Open in Colab](https://colab.research.google.com/drive/1d-rzhyYXo6LrHsMV924lUcNv3663cs-o?usp=sharing)
+🤗 [Live Demo on HF Space](https://huggingface.co/spaces/rachana05/Compliance-patch-bench) · 📓 [Open in Colab](https://colab.research.google.com/drive/1d-rzhyYXo6LrHsMV924lUcNv3663cs-o?usp=sharing)
 
 ### Visual overview
 

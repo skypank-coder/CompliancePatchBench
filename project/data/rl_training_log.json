@@ -13,9 +13,9 @@
     "grad_accum": 4,
     "learning_rate": 2e-05,
     "gamma": 1.0,
-    "max_steps": 4,
+    "max_steps": 8,
     "max_seq_length": 4096,
-    "max_tasks": 2,
+    "max_tasks": 8,
     "seed": 42,
     "dry_run": true,
     "use_tabular_rl": false,
@@ -26,29 +26,35 @@
   },
   "optimization_method": "dry_run_no_weight_update",
   "train_task_ids": [
-    "gdpr_email_in_print_v1_79afac"
+    "sec_debug_true_v1_4dd14a",
+    "sec_api_key_leak_v1_4bcfa4",
+    "gdpr_leak_pwd_hash_v1_cae3aa",
+    "sec_sql_injection_v1_0272c3",
+    "sec_hardcoded_secret_v1_4f2488",
+    "gdpr_dict_password_leak_v1_ffb93e"
   ],
   "test_task_ids": [
-    "gdpr_log_pii_v1_66ff1f"
+    "gdpr_log_pii_v1_66ff1f",
+    "gdpr_email_in_print_v1_79afac"
   ],
   "learning_curve": [
     {
       "iteration": 0,
-      "avg_reward": 1.5,
-      "success_rate": 1.0,
+      "avg_reward": 1.25,
+      "success_rate": 0.8333,
       "valid_json_rate": 1.0,
       "invalid_output_rate": 0.0,
       "fallback_rate": 0.0,
-      "train_success_rate": 1.0,
+      "train_success_rate": 0.8333,
       "test_success_rate": 1.0,
       "hidden_violation_rate": 0.0,
       "partial_fix_rate": 0.0,
-      "no_fix_rate": 0.0,
+      "no_fix_rate": 0.1667,
       "cheat_resistance": 1.0,
       "failure_stats": {
         "hidden_violation": 0,
         "partial_fix": 0,
-        "no_fix": 0
+        "no_fix": 1
       },
       "test_failure_stats": {
         "hidden_violation": 0,
@@ -56,15 +62,15 @@
         "no_fix": 0
       },
       "reward_components": {
-        "reward_ci": 1.5,
-        "reward_minimal": 0.0,
+        "reward_ci": 7.5,
+        "reward_minimal": 0.2,
         "reward_regression": 0.0,
-        "reward_penalty": 0.0
+        "reward_penalty": -0.2
       },
-      "mean_length": 78.6667,
-      "terminated_length": 3.0,
-      "avg_confidence": 0.9057,
-      "high_confidence_wrong": 0,
+      "mean_length": 65.3889,
+      "terminated_length": 18.0,
+      "avg_confidence": 0.9185,
+      "high_confidence_wrong": 1,
       "recovered_tasks": 0,
       "total_recovered_tasks": 0,
       "task_weight_summary": {
@@ -75,21 +81,21 @@
     },
     {
       "iteration": 1,
-      "avg_reward": 1.5,
-      "success_rate": 1.0,
+      "avg_reward": 1.25,
+      "success_rate": 0.8333,
       "valid_json_rate": 1.0,
       "invalid_output_rate": 0.0,
       "fallback_rate": 0.0,
-      "train_success_rate": 1.0,
+      "train_success_rate": 0.8333,
       "test_success_rate": 1.0,
       "hidden_violation_rate": 0.0,
       "partial_fix_rate": 0.0,
-      "no_fix_rate": 0.0,
+      "no_fix_rate": 0.1667,
       "cheat_resistance": 1.0,
       "failure_stats": {
         "hidden_violation": 0,
         "partial_fix": 0,
-        "no_fix": 0
+        "no_fix": 1
       },
       "test_failure_stats": {
         "hidden_violation": 0,
@@ -97,20 +103,20 @@
         "no_fix": 0
       },
       "reward_components": {
-        "reward_ci": 1.5,
-        "reward_minimal": 0.0,
+        "reward_ci": 7.5,
+        "reward_minimal": 0.2,
         "reward_regression": 0.0,
-        "reward_penalty": 0.0
+        "reward_penalty": -0.2
       },
-      "mean_length": 78.6667,
-      "terminated_length": 3.0,
-      "avg_confidence": 0.9057,
-      "high_confidence_wrong": 0,
+      "mean_length": 47.4444,
+      "terminated_length": 18.0,
+      "avg_confidence": 0.9185,
+      "high_confidence_wrong": 1,
       "recovered_tasks": 0,
       "total_recovered_tasks": 0,
       "task_weight_summary": {
         "min": 0.45,
-        "max": 0.45,
+        "max": 2.88,
         "adversarial_avg": 0.0
       }
     }
@@ -120,7 +126,7 @@
       "iteration": 1,
       "updated": false,
       "reason": "dry_run=True",
-      "transitions": 3,
+      "transitions": 18,
       "checkpoint": null
     }
   ],

@@ -49,6 +49,9 @@ We trained **Qwen2.5-3B-Instruct** with **GRPO** in TRL on top of **Unsloth 4-bi
 | Full fix rate (reward > 1.0) | ~0% | 91% in the best batch |
 | Deletion-style shortcuts | Common | Penalized, decreasing |
 
+<img width="1165" height="1600" alt="image" src="https://github.com/user-attachments/assets/8f1d6325-3e63-4b99-998d-0f9019df31e7" />
+
+
 **Bad patch (still "passes" shallow checks, fails our reward):**  
 `# logging removed for compliance` → deletion detected, **-1.0**.
 
@@ -74,6 +77,6 @@ After the patcher trains, a second **adversary** agent writes new violations mea
 - **Training notebook (GitHub; Open in Colab from the file menu):** [github.com/skypank-coder/CompliancePatchBench/blob/main/project/model_training_.ipynb](https://github.com/skypank-coder/CompliancePatchBench/blob/main/project/model_training_.ipynb)
 - **Public Colab (optional):** [Open in Colab](https://colab.research.google.com/drive/1d-rzhyYXo6LrHsMV924lUcNv3663cs-o?usp=sharing) (same project; `openenv.yaml` stores this under `links.colab_notebook`)
 - **Code and data:** [github.com/skypank-coder/CompliancePatchBench](https://github.com/skypank-coder/CompliancePatchBench)
-- **LoRA adapter:** [huggingface.co/skypank-coder/compliancepatchbench-grpo-adapter](https://huggingface.co/skypank-coder/compliancepatchbench-grpo-adapter)
+
 
 If your agent can consistently score above 0.8 on task3_microservices, it has learned something that enterprise security teams would actually pay for.

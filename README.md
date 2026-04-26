@@ -222,6 +222,12 @@ The raw reward is noisy by design — this is on-policy RL where the model
 explores different patch strategies per step. The smoothed 5-step running 
 average shows the actual learning trend:
 
+![GRPO reward: raw vs smoothed — full run, 120 trainer steps (trend, not point noise)](docs/assets/grpo-reward-120-steps-raw-smoothed.png)
+
+*Same run, first 55 steps (exploration → early recovery):*
+
+![GRPO reward: first 55 steps, raw vs smoothed](docs/assets/grpo-reward-first-55-steps.png)
+
 | Phase | Steps | Smoothed Reward | What's Happening |
 |---|---|---|---|
 | Exploration | 0–30 | –0.10 | Model outputs invalid JSON, deletion attempts, wrong files |
@@ -232,6 +238,8 @@ average shows the actual learning trend:
 **Before GRPO (heuristic baseline):** 0.84  
 **After GRPO (trained model):** 2.11  
 **Delta: +1.27**
+
+![CompliancePatchBench — GRPO training results: reward over training (first 55 steps) vs before/after on the same 7 tasks](docs/assets/grpo-before-after-training-results.png)
 
 ### Why 120 steps is meaningful, not a limitation
 

@@ -14,6 +14,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 
 # --- Global setup -----------------------------------------------------------------
 # Backend (FastAPI) base URL. On Hugging Face: set env ENV_BASE_URL to the
@@ -164,40 +165,126 @@ def run_live_episode(base: str) -> Tuple[Optional[float], bool]:
 def _global_dashboard_css() -> str:
     return """
     <style>
-    :root { --cpb-card-shadow: 0 4px 20px rgba(15, 23, 42, 0.06); --cpb-radius: 12px; }
-    div[data-testid="stAppViewContainer"] {
-        background: linear-gradient(160deg, #f1f5f9 0%, #e2e8f0 50%, #f8fafc 100%) !important;
-    }
-    [data-testid="stHeader"] { background: transparent; }
+    :root { --cpb-shadow: 0 6px 24px rgba(15, 23, 42, 0.07); --cpb-radius: 16px; }
+    div[data-testid="stAppViewContainer"] { background: #f5f7fa !important; }
+    [data-testid="stHeader"] { background: #f5f7fa; }
     .main .block-container {
-        max-width: 1100px !important;
-        padding: 1.5rem 2.5rem 3rem 2.5rem !important;
+        max-width: 1080px !important;
+        padding: 1.75rem 2rem 3rem 2rem !important;
     }
-    h1, h2, h3 { color: #0f172a !important; font-weight: 700 !important; }
-    h2 { font-size: 1.25rem !important; letter-spacing: -0.02em; }
-    .stTabs [data-baseweb="tab-list"] { gap: 8px; background: #fff; border-radius: var(--cpb-radius); padding: 6px; box-shadow: var(--cpb-card-shadow); }
-    [data-testid="stExpander"] { background: #fff; border-radius: var(--cpb-radius); }
-    @keyframes cpb-fadein { from { opacity: 0.88; } to { opacity: 1; } }
-    [data-baseweb="tab-panel"] { animation: cpb-fadein 0.45s ease-out; }
-    [data-testid="stMetricValue"] { font-size: 1.35rem !important; font-weight: 700 !important; }
-    [data-testid="stMetricDelta"] p { font-size: 0.9rem; }
-    .cpb-code-wrap {
-        background: #0f172a !important; border-radius: 10px !important;
-        box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+    h1, h2, h3, h4 { color: #0f172a !important; }
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px; background: #fff; border-radius: 14px; padding: 8px; box-shadow: var(--cpb-shadow);
+        border: 1px solid #e5e7eb;
     }
-    .cpb-code-wrap pre, .cpb-code-wrap code { white-space: pre-wrap !important; word-break: break-word !important; font-size: 0.8rem !important; }
-    .stCodeBlock { border-radius: 10px; }
+    [data-baseweb="tab-panel"] {
+        background: #fff !important;
+        border-radius: var(--cpb-radius) !important;
+        padding: 1.5rem 1.5rem 1.75rem 1.5rem !important;
+        margin-top: 0.5rem;
+        box-shadow: var(--cpb-shadow) !important;
+        border: 1px solid #eef0f3 !important;
+        animation: cpb-fadein 0.4s ease-out;
+    }
+    @keyframes cpb-fadein { from { opacity: 0.92; } to { opacity: 1; } }
+    [data-testid="stMetricValue"] { font-size: 1.3rem !important; font-weight: 700 !important; }
+    [data-testid="stCodeBlock"] {
+        background: #1e293b !important; border-radius: 12px !important;
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06) !important;
+    }
+    [data-testid="stCodeBlock"] pre, [data-testid="stCodeBlock"] code {
+        white-space: pre-wrap !important; word-break: break-word !important; font-size: 0.8rem !important;
+    }
     [data-testid="column"] { min-width: 0 !important; }
-    .cpb-pill { display: inline-block; padding: 0.2rem 0.55rem; border-radius: 999px; font-size: 0.72rem; font-weight: 700; }
+    .cpb-pill { display: inline-block; padding: 0.22rem 0.6rem; border-radius: 999px; font-size: 0.7rem; font-weight: 800; }
     .cpb-pill-bad { background: #fee2e2; color: #b91c1c; }
     .cpb-pill-good { background: #d1fae5; color: #047857; }
-    .cpb-live-col { background: #fff; border-radius: 12px; padding: 0.9rem; border: 1px solid #e2e8f0; min-height: 100%; }
-    .cpb-live-baseline { border-color: #fecaca; background: linear-gradient(180deg, #fff 0%, #fff5f5 100%); }
-    .cpb-live-rl { border-color: #a7f3d0; background: linear-gradient(180deg, #fff 0%, #f0fdf4 100%); }
-    button[kind="primary"] { transition: transform 0.1s ease, box-shadow 0.15s; border-radius: 10px; }
-    button[kind="primary"]:active { transform: scale(0.98); }
+    /* Only this app row has 3 st.code() columns: stretch + tint full column (equal height) */
+    div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:has([data-testid="stCodeBlock"]):nth-child(1) {
+        align-self: stretch; min-height: 360px; background: #fef2f2 !important;
+        border: 1px solid #fecaca; border-radius: 14px; padding: 0.75rem 0.6rem 1rem; box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+    }
+    div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:has([data-testid="stCodeBlock"]):nth-child(2) {
+        align-self: stretch; min-height: 360px; background: #fff1f2 !important;
+        border: 1px solid #fecdd3; border-radius: 14px; padding: 0.75rem 0.6rem 1rem; box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+    }
+    div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:has([data-testid="stCodeBlock"]):nth-child(3) {
+        align-self: stretch; min-height: 360px; background: #ecfdf5 !important;
+        border: 1px solid #a7f3d0; border-radius: 14px; padding: 0.75rem 0.6rem 1rem; box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+    }
+    button[kind="primary"] {
+        background: linear-gradient(180deg, #ef4444, #dc2626) !important; border: none !important;
+        font-weight: 700 !important; border-radius: 12px !important; padding: 0.6rem 1.25rem !important;
+        box-shadow: 0 4px 14px rgba(220, 38, 38, 0.35) !important;
+        transition: transform 0.15s ease, box-shadow 0.2s ease !important;
+    }
+    button[kind="primary"]:hover {
+        transform: scale(1.02);
+        box-shadow: 0 6px 22px rgba(220, 38, 38, 0.45) !important;
+    }
+    button[kind="primary"]:active { transform: scale(0.98) !important; }
+    .cpb-insight-box {
+        background: linear-gradient(135deg, #f0f9ff 0%, #f8fafc 100%);
+        border: 1px solid #bfdbfe; border-radius: 12px; padding: 0.9rem 1.1rem; margin: 0.5rem 0 0 0; font-size: 0.95rem;
+        line-height: 1.55; color: #1e3a5f;
+    }
+    .cpb-insight-box .k { font-weight: 800; color: #0f172a; }
     </style>
     """
+
+
+def _kpi_row_components_html(
+    initial_reward: float,
+    peak_reward: float,
+    final_reward: float,
+    pstep: Any,
+    improvement_pct: float,
+    imp_good: bool,
+) -> str:
+    ps = str(pstep)
+    d_final = f"Δ {improvement_pct:+.0f}% vs start"
+    bg, fg = ("#dcfce7", "#166534") if imp_good else ("#fee2e2", "#b91c1c")
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+body{{margin:0;font-family:system-ui,-apple-system,sans-serif;}}
+.wrap{{display:flex;gap:14px;flex-wrap:wrap;justify-content:space-between;}}
+.card{{
+  flex:1;min-width:158px;background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:14px 12px;text-align:center;
+  box-shadow:0 4px 18px rgba(15,23,42,0.06);transition:box-shadow .2s,transform .2s;
+}}
+.card:hover{{box-shadow:0 8px 26px rgba(15,23,42,0.1);transform:translateY(-2px);}}
+.ico{{font-size:1.4rem;line-height:1.2;}}
+.val{{font-size:1.7rem;font-weight:800;color:#0f172a;margin:8px 0 4px;}}
+.lbl{{color:#64748b;font-size:0.68rem;text-transform:uppercase;letter-spacing:.08em;font-weight:700;}}
+.badge{{display:inline-block;margin-top:10px;padding:5px 11px;border-radius:9px;font-size:0.78rem;font-weight:700;}}
+.neu{{background:#f1f5f9;color:#475569;}}
+</style></head><body><div class="wrap">
+<div class="card"><div class="ico">📉</div><div class="val">{initial_reward:+.2f}</div><div class="lbl">Initial</div></div>
+<div class="card"><div class="ico">📈</div><div class="val">{peak_reward:+.2f}</div><div class="lbl">Peak</div>
+<div><span class="badge neu">highest @ step {ps}</span></div></div>
+<div class="card"><div class="ico">🏁</div><div class="val">{final_reward:+.2f}</div><div class="lbl">Final (smoothed)</div>
+<div><span class="badge" style="background:{bg};color:{fg}">{d_final}</span></div></div>
+</div></body></html>"""
+
+
+def _insight_box_html(
+    i0: float, peak: float, fn: float, pstep: int, improved_narrative: bool
+) -> str:
+    if improved_narrative:
+        line = (
+            f'Model <span class="k">{i0:+.2f}</span> → peak <span class="k">{peak:+.2f}</span> (step {pstep}) → '
+            f'end <span class="k">{fn:+.2f}</span>. Late wobble = typical on-policy GRPO exploration.'
+        )
+    else:
+        line = (
+            f'From <span class="k">{i0:+.2f}</span> to <span class="k">{fn:+.2f}</span>, '
+            f'peak <span class="k">{peak:+.2f}</span> @ {pstep}.'
+        )
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+body{{margin:0;font-family:system-ui,-apple-system,sans-serif;}}
+.box{{background:linear-gradient(135deg,#f0f9ff 0%,#f8fafc 100%);border:1px solid #bfdbfe;border-radius:12px;
+padding:12px 14px;font-size:0.92rem;line-height:1.55;color:#1e3a5f;}}
+.k{{font-weight:800;color:#0f172a;}}
+</style></head><body><div class="box"><b style="color:#0f172a">Insight</b> — {line}</div></body></html>"""
 
 
 def _build_reward_plotly(
@@ -216,7 +303,7 @@ def _build_reward_plotly(
             y=curve_data,
             mode="lines",
             name="Raw",
-            line=dict(color="rgba(59, 130, 246, 0.5)", width=1.2),
+            line=dict(color="rgba(37, 99, 235, 0.4)", width=1),
             hovertemplate="Step %{x}<br>Reward %{y:.3f}<extra></extra>",
         )
     )
@@ -226,7 +313,7 @@ def _build_reward_plotly(
             y=smoothed,
             mode="lines",
             name="Smoothed (5-step)",
-            line=dict(color="rgb(234, 88, 12)", width=2.6),
+            line=dict(color="rgb(234, 88, 12)", width=3.2),
             hovertemplate="Step %{x}<br>Smoothed %{y:.3f}<extra></extra>",
         )
     )
@@ -261,16 +348,23 @@ def _build_reward_plotly(
     )
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(255,255,255,0.65)",
-        margin=dict(l=50, r=30, t=50, b=50),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, bgcolor="rgba(255,255,255,0.7)"),
+        plot_bgcolor="rgba(255,255,255,0.72)",
+        margin=dict(l=60, r=28, t=52, b=52),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, bgcolor="rgba(255,255,255,0.85)"),
         xaxis_title="Training Step",
         yaxis_title="Reward",
-        xaxis=dict(gridcolor="rgba(148,163,184,0.25)"),
-        yaxis=dict(gridcolor="rgba(148,163,184,0.25)"),
+        xaxis=dict(
+            gridcolor="rgba(148,163,184,0.08)",
+            zerolinecolor="rgba(148,163,184,0.18)",
+        ),
+        yaxis=dict(
+            gridcolor="rgba(148,163,184,0.08)",
+            zerolinecolor="rgba(148,163,184,0.18)",
+        ),
         hovermode="x unified",
         font=dict(family="system-ui, sans-serif", color="#0f172a"),
         uirevision="cpb-train",
+        transition=dict(duration=450, easing="cubic-in-out"),
     )
     return fig
 
@@ -317,8 +411,13 @@ def _add_benchmark_column(df: pd.DataFrame) -> pd.DataFrame:
 def _style_benchmark_df(df: pd.DataFrame) -> Any:
     num_cols = [c for c in ("GPT-4o", "GPT-4o-mini", "Our Model") if c in df.columns]
     s = df.style
-    for col in num_cols:
+    gpt = [c for c in ("GPT-4o", "GPT-4o-mini") if c in df.columns]
+    for col in gpt:
         s = s.background_gradient(cmap="RdYlGn", subset=[col], axis=0)
+    if "Our Model" in df.columns:
+        s = s.background_gradient(
+            cmap="Greens", subset=["Our Model"], axis=0, low=0.2, high=0.95
+        )
     if num_cols:
         s = s.apply(
             lambda row: [
@@ -340,11 +439,11 @@ st.set_page_config(
 
 st.markdown(_global_dashboard_css(), unsafe_allow_html=True)
 st.markdown(
-    "<div style='text-align:center;margin-bottom:0.25rem;'>"
+    "<div style='background:#fff;border-radius:16px;padding:1.1rem 1.25rem;margin-bottom:0.75rem;"
+    "box-shadow:0 6px 22px rgba(15,23,42,0.06);border:1px solid #eef0f3;text-align:center;'>"
     "<span style='font-size:1.85rem;font-weight:800;letter-spacing:-0.03em;color:#0f172a;'>CompliancePatchBench</span>"
-    "</div>"
-    "<p style='text-align:center;color:#64748b;font-size:0.95rem;margin:0 0 0.5rem 0;'>"
-    "Meta OpenEnv Hackathon 2026 · Real compliance · Hidden checks · No shortcuts</p>",
+    "<p style='color:#64748b;font-size:0.95rem;margin:0.35rem 0 0 0;'>"
+    "Meta OpenEnv Hackathon 2026 · Real compliance · Hidden checks · No shortcuts</p></div>",
     unsafe_allow_html=True,
 )
 
@@ -414,61 +513,58 @@ with tab_live:
 
     with c1:
         st.markdown(
-            '<div class="cpb-live-col"><p style="margin:0 0 0.5rem 0">'
-            '<span class="cpb-pill" style="background:#fef3c7;color:#b45309;">Violation</span></p></div>',
+            '<p style="margin:0 0 0.5rem 0">'
+            '<span class="cpb-pill" style="background:#fecaca;color:#991b1b;">🚨 Violation</span></p>',
             unsafe_allow_html=True,
         )
         st.code(vcode, language="python", line_numbers=False)
         st.markdown(
-            f'<div class="cpb-live-col" style="margin-top:-0.5rem">'
-            f'<p style="color:#64748b;font-size:0.88rem"><b style="color:#0f172a">Rule</b> {rule}<br/>'
-            f'<b style="color:#0f172a">Severity</b> {sev}</p></div>',
+            f'<p style="color:#64748b;font-size:0.88rem;margin-top:0.75rem">'
+            f'<b style="color:#0f172a">Rule</b> {rule}<br/>'
+            f'<b style="color:#0f172a">Severity</b> {sev}</p>',
             unsafe_allow_html=True,
         )
 
     with c2:
         st.markdown(
-            '<div class="cpb-live-col cpb-live-baseline">'
             '<p style="margin:0 0 0.5rem 0">'
-            '<span class="cpb-pill cpb-pill-bad">Baseline Agent</span></p></div>',
+            '<span class="cpb-pill cpb-pill-bad">❌ Baseline agent</span></p>',
             unsafe_allow_html=True,
         )
         st.code(bcode, language="python", line_numbers=False)
-        st.markdown('<div class="cpb-live-col cpb-live-baseline">', unsafe_allow_html=True)
         st.caption("Fails hidden constraint (loses auditability)")
         st.metric("Reward (env)", f"{br_f:+.2f}")
-        st.markdown("</div>", unsafe_allow_html=True)
 
     with c3:
         st.markdown(
-            '<div class="cpb-live-col cpb-live-rl">'
             '<p style="margin:0 0 0.5rem 0">'
-            '<span class="cpb-pill cpb-pill-good">RL agent</span></p></div>',
+            '<span class="cpb-pill cpb-pill-good">✅ RL agent</span></p>',
             unsafe_allow_html=True,
         )
         st.code(rcode, language="python", line_numbers=False)
-        st.markdown('<div class="cpb-live-col cpb-live-rl">', unsafe_allow_html=True)
         st.caption("Passes CI + compliance")
-        st.metric(
-            "Reward (reference)",
-            f"{gr_f:+.2f}" if gr_f is not None else "—",
-        )
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.metric("Reward (reference)", f"{gr_f:+.2f}" if gr_f is not None else "—")
 
     st.divider()
-    st.markdown("<p style='color:#94a3b8;font-size:0.8rem;margin:0.25rem 0 0.5rem 0;'>Connect <code>ENV_BASE_URL</code> to the API Space for a real reset/step episode.</p>", unsafe_allow_html=True)
-    if st.button("▶ Run Live Episode", type="primary", use_container_width=True):
-        with st.spinner("Running episode…"):
-            time.sleep(0.15)
-            score, live_ok = run_live_episode(ENV_BASE_URL)
-            st.session_state.last_live_ok = live_ok
-            st.session_state.final_score_demo = score
-            if not live_ok:
-                st.session_state.using_demo = True
-                st.warning("Could not complete live episode — check API or env.")
-            else:
-                st.session_state.using_demo = False
-                st.toast("Episode finished.", icon="✅")
+    st.markdown(
+        "<p style='text-align:center;color:#94a3b8;font-size:0.8rem;margin:0.25rem 0 0.5rem 0;'>"
+        "Connect <code>ENV_BASE_URL</code> to the API Space for a real reset/step episode.</p>",
+        unsafe_allow_html=True,
+    )
+    _b0, _b1, _b2 = st.columns([1, 2, 1])
+    with _b1:
+        if st.button("▶ Run Live Episode", type="primary", use_container_width=True):
+            with st.spinner("Running episode…"):
+                time.sleep(0.15)
+                score, live_ok = run_live_episode(ENV_BASE_URL)
+                st.session_state.last_live_ok = live_ok
+                st.session_state.final_score_demo = score
+                if not live_ok:
+                    st.session_state.using_demo = True
+                    st.warning("Could not complete live episode — check API or env.")
+                else:
+                    st.session_state.using_demo = False
+                    st.toast("Episode finished.", icon="✅")
 
     fs = st.session_state.final_score_demo
     if fs is not None:
@@ -537,25 +633,19 @@ with tab_train:
 
     imp_good = final_reward >= initial_reward
     pstep = step_numbers[peak_i] if step_numbers and peak_i < len(step_numbers) else "—"
-    # Native st.metric — Streamlit markdown often strips/escapes nested HTML from st.markdown(unsafe_allow_html).
-    mc1, mc2, mc3 = st.columns(3)
-    dsign = f"{improvement_pct:+.0f}%"
-    with mc1:
-        st.metric("📉 Initial reward", f"{initial_reward:+.2f}")
-    with mc2:
-        st.metric(
-            "📈 Peak reward",
-            f"{peak_reward:+.2f}",
-            f"highest @ step {pstep}" if pstep != "—" else "—",
-            delta_color="off",
-        )
-    with mc3:
-        st.metric(
-            "🏁 Final (smoothed)",
-            f"{final_reward:+.2f}",
-            f"Δ {dsign} vs start",
-            delta_color="normal" if imp_good else "inverse",
-        )
+    pstep_int = int(pstep) if pstep != "—" and step_numbers else 0
+    components.html(
+        _kpi_row_components_html(
+            initial_reward,
+            peak_reward,
+            final_reward,
+            pstep,
+            improvement_pct,
+            imp_good,
+        ),
+        height=195,
+        scrolling=False,
+    )
 
     if len(curve_data) >= 2 and len(step_numbers) == len(curve_data) == len(smoothed):
         st.markdown("#### Reward over training")
@@ -568,9 +658,13 @@ with tab_train:
         st.caption(
             f"Steps {step_numbers[0]}–{step_numbers[-1]} · {len(curve_data)} logged batches"
         )
-        st.markdown("##### Insight")
-        st.markdown(
-            _training_insight_text(curve_data, smoothed, step_numbers, peak_reward)
+        i0, fn = float(smoothed[0]), float(smoothed[-1])
+        components.html(
+            _insight_box_html(
+                i0, float(peak_reward), fn, pstep_int, fn >= i0
+            ),
+            height=120,
+            scrolling=False,
         )
     else:
         st.warning(

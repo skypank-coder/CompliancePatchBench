@@ -33,17 +33,38 @@ from .utils import clip_model_json_output, clip_reward_value, extract_json, get_
 
 log = get_logger("agent")
 
-# Decoding: pass max_new_tokens (and only that) to model.generate; do not set generation_config
-# to duplicate length — avoids HF warnings. JSON span is taken via clip_model_json_output.
-GENERATION_MAX_NEW_TOKENS = 512
+# Decoding: pass max_new_tokens (and only that) to model.generate. JSON span is
+# taken via clip_model_json_output. Stopping: tokenizer EOS + literal `}` token id
+# (see json_action_eos_token_ids) so GRPO completions terminate before the cap.
+GENERATION_MAX_NEW_TOKENS = 150
 STOP_TOKENS = ["}"]  # used only for legacy health heuristics; prefer clip_model_json_output
+
+
+def json_action_eos_token_ids(tokenizer: Any) -> List[int]:
+    """
+    Token IDs that may end a single JSON action: model EOS plus the last token of
+    the string `}` (so generation stops when the JSON object closes).
+    """
+    ids: List[int] = []
+    eos = getattr(tokenizer, "eos_token_id", None)
+    if eos is not None:
+        ids.append(int(eos))
+    try:
+        rb = tokenizer.encode("}", add_special_tokens=False)
+        if rb:
+            x = int(rb[-1])
+            if x not in ids:
+                ids.append(x)
+    except Exception:
+        pass
+    return ids
 
 
 def align_causal_lm_and_tokenizer(model, tokenizer, max_new_tokens: int = GENERATION_MAX_NEW_TOKENS) -> None:
     """
-    Unify pad/eos on tokenizer and `model.config` only. Length / sampling is passed
-    explicitly to `model.generate(...)`; we do not set `model.generation_config`
-    in parallel to avoid conflicting with per-call kwargs.
+    Unify pad/eos on tokenizer and model config. Sets `model.generation_config.eos_token_id`
+    to [EOS, `}`] so sampling stops after a complete JSON object. Clears `max_length`
+    on GenerationConfig so only per-call `max_new_tokens` applies (no HF double-count).
     """
     if getattr(tokenizer, "pad_token", None) is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -53,13 +74,14 @@ def align_causal_lm_and_tokenizer(model, tokenizer, max_new_tokens: int = GENERA
         tokenizer.pad_token_id = eos_id
         pad_id = eos_id
     model.config.pad_token_id = pad_id
-    model.config.eos_token_id = eos_id
+    eos_ids = json_action_eos_token_ids(tokenizer)
+    if eos_ids:
+        model.config.eos_token_id = eos_ids[0] if len(eos_ids) == 1 else eos_ids
+    elif eos_id is not None:
+        model.config.eos_token_id = eos_id
     bos_id = getattr(tokenizer, "bos_token_id", None)
     if getattr(model.config, "bos_token_id", None) in (None,) and bos_id is not None:
         model.config.bos_token_id = bos_id
-    # Clear stale max_length on any HuggingFace GenerationConfig so it never stacks
-    # with per-call `max_new_tokens=...` in model.generate. Do not set max_new_tokens
-    # on generation_config (avoids TRL/HF double-counting).
     gen = getattr(model, "generation_config", None)
     if gen is not None:
         try:
@@ -67,11 +89,13 @@ def align_causal_lm_and_tokenizer(model, tokenizer, max_new_tokens: int = GENERA
                 gen.max_length = None
             if pad_id is not None and hasattr(gen, "pad_token_id"):
                 gen.pad_token_id = pad_id
-            if eos_id is not None and hasattr(gen, "eos_token_id"):
+            if eos_ids and hasattr(gen, "eos_token_id"):
+                gen.eos_token_id = eos_ids
+            elif eos_id is not None and hasattr(gen, "eos_token_id"):
                 gen.eos_token_id = eos_id
         except Exception:
             pass
-    _ = max_new_tokens  # unused here; generate() call sites pass max_new_tokens=GENERATION_MAX_NEW_TOKENS
+    _ = max_new_tokens
 
 
 # ─── System prompt (keep short: completion budget is limited in GRPO) ─────────
@@ -337,6 +361,7 @@ def make_hf_pipeline_backend(
         )
         inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
         t = max(0.0, float(temperature))
+        _eos = json_action_eos_token_ids(tokenizer)
         with torch.no_grad():
             if t <= 0.0:
                 out = model.generate(
@@ -344,7 +369,7 @@ def make_hf_pipeline_backend(
                     max_new_tokens=max_new_tokens,
                     do_sample=False,
                     pad_token_id=tokenizer.pad_token_id,
-                    eos_token_id=tokenizer.eos_token_id,
+                    eos_token_id=_eos if _eos else tokenizer.eos_token_id,
                 )
             else:
                 out = model.generate(
@@ -353,7 +378,7 @@ def make_hf_pipeline_backend(
                     do_sample=True,
                     temperature=t,
                     pad_token_id=tokenizer.pad_token_id,
-                    eos_token_id=tokenizer.eos_token_id,
+                    eos_token_id=_eos if _eos else tokenizer.eos_token_id,
                 )
         text = tokenizer.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
         return clip_model_json_output(text)

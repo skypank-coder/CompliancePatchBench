@@ -61,6 +61,7 @@ from .agent import (
     _patches_seen,
     _read_files_seen,
     align_causal_lm_and_tokenizer,
+    json_action_eos_token_ids,
     make_heuristic_backend,
     make_hf_pipeline_backend,
 )
@@ -528,20 +529,11 @@ def _grpo_generation_kwargs_rbrace_eos(tokenizer: Any) -> Optional[Dict[str, Any
     Add '}' as an extra EOS so generate() can stop after one JSON object instead of
     always filling max_new_tokens (which zeros TRL's mean_terminated_length signal).
     """
-    rbrace_ids = (
-        tokenizer.encode("}", add_special_tokens=False) if tokenizer is not None else []
-    )
-    rbrace = rbrace_ids[-1] if rbrace_ids else None
-    eos = getattr(tokenizer, "eos_token_id", None)
-    extra: List[int] = []
-    if eos is not None:
-        extra.append(int(eos))
-    if rbrace is not None and rbrace not in extra:
-        extra.append(int(rbrace))
+    if tokenizer is None:
+        return None
+    extra = json_action_eos_token_ids(tokenizer)
     if not extra:
         return None
-    if len(extra) == 1:
-        return {"eos_token_id": extra[0]}
     return {"eos_token_id": extra}
 
 
@@ -631,6 +623,7 @@ def _current_policy_backend(cfg: RLConfig, model_path: Optional[str], temperatur
             model = PeftModel.from_pretrained(base, model_path)
             model.eval()
             align_causal_lm_and_tokenizer(model, tokenizer, max_new_tokens=GENERATION_MAX_NEW_TOKENS)
+            _eos = json_action_eos_token_ids(tokenizer)
 
             def _call(messages: List[Dict[str, str]]) -> str:
                 prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
@@ -643,7 +636,7 @@ def _current_policy_backend(cfg: RLConfig, model_path: Optional[str], temperatur
                             max_new_tokens=GENERATION_MAX_NEW_TOKENS,
                             do_sample=False,
                             pad_token_id=tokenizer.pad_token_id,
-                            eos_token_id=tokenizer.eos_token_id,
+                            eos_token_id=_eos if _eos else tokenizer.eos_token_id,
                         )
                     else:
                         out = model.generate(
@@ -652,7 +645,7 @@ def _current_policy_backend(cfg: RLConfig, model_path: Optional[str], temperatur
                             do_sample=True,
                             temperature=t,
                             pad_token_id=tokenizer.pad_token_id,
-                            eos_token_id=tokenizer.eos_token_id,
+                            eos_token_id=_eos if _eos else tokenizer.eos_token_id,
                         )
                 text = tokenizer.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
                 return clip_model_json_output(text)
@@ -795,6 +788,9 @@ def policy_gradient_update(
     out_dir.mkdir(parents=True, exist_ok=True)
 
     _gkw = _grpo_generation_kwargs_rbrace_eos(tokenizer)
+    _eos_ids = json_action_eos_token_ids(tokenizer)
+    if _eos_ids and getattr(model, "generation_config", None) is not None:
+        model.generation_config.eos_token_id = _eos_ids
     grpo_kwargs: Dict[str, Any] = {
         "output_dir": str(out_dir),
         "max_steps": max(1, len(train_tasks) * cfg.epochs_per_iteration),

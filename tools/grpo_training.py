@@ -23,7 +23,12 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from environment.patch_env import CompliancePatchEnv
-from project.agent import GENERATION_MAX_NEW_TOKENS, SYSTEM_PROMPT, align_causal_lm_and_tokenizer
+from project.agent import (
+    GENERATION_MAX_NEW_TOKENS,
+    SYSTEM_PROMPT,
+    align_causal_lm_and_tokenizer,
+    json_action_eos_token_ids,
+)
 from project.utils import clip_model_json_output
 from environment.tasks.task1_single_file import get_task as get_task1
 from environment.tasks.task2_django_app import get_task as get_task2
@@ -71,6 +76,7 @@ def rollout(model, tokenizer, task_id: str) -> dict:
         prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
 
+        _eos = json_action_eos_token_ids(tokenizer)
         with torch.no_grad():
             outputs = model.generate(
                 **inputs,
@@ -78,7 +84,7 @@ def rollout(model, tokenizer, task_id: str) -> dict:
                 temperature=0.8,
                 do_sample=True,
                 pad_token_id=tokenizer.pad_token_id,
-                eos_token_id=tokenizer.eos_token_id,
+                eos_token_id=_eos if _eos else tokenizer.eos_token_id,
             )
 
         raw = tokenizer.decode(outputs[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
@@ -214,19 +220,10 @@ def train():
     from datasets import Dataset
     dataset = Dataset.from_list(prompts)
 
-    _rbrace = tokenizer.encode("}", add_special_tokens=False)
-    _rbrace_id = _rbrace[-1] if _rbrace else None
-    _eos = getattr(tokenizer, "eos_token_id", None)
-    _extra_eos: List[int] = []
-    if _eos is not None:
-        _extra_eos.append(int(_eos))
-    if _rbrace_id is not None and _rbrace_id not in _extra_eos:
-        _extra_eos.append(int(_rbrace_id))
-    _gen_kw = None
-    if _extra_eos:
-        _gen_kw = {
-            "eos_token_id": _extra_eos if len(_extra_eos) > 1 else _extra_eos[0]
-        }
+    _extra_eos = json_action_eos_token_ids(tokenizer)
+    _gen_kw = {"eos_token_id": _extra_eos} if _extra_eos else None
+    if _extra_eos and getattr(model, "generation_config", None) is not None:
+        model.generation_config.eos_token_id = _extra_eos
 
     config = GRPOConfig(
         output_dir="./patch_agent_model",

@@ -5,7 +5,7 @@ colorFrom: blue
 colorTo: purple
 sdk: docker
 app_port: 7860
-short_description: "Streamlit UI; set ENV_BASE_URL to your deployed API *.hf.space URL (not localhost) so the frontend uses the live backend"
+short_description: "Streamlit UI — set ENV_BASE_URL to your API *.hf.space URL"
 license: mit
 pinned: false
 ---

@@ -218,16 +218,9 @@ app.logger.info('User %s logged in', str(user.id))
 - **Reward:** Live CompliancePatchEnv — no string heuristics, no human labels
 
 ### Reward curve (120 steps, smoothed)
-
-The raw reward is noisy by design — this is on-policy RL where the model
-explores different patch strategies per step. The smoothed 5-step running
+The raw reward is noisy by design — this is on-policy RL where the model 
+explores different patch strategies per step. The smoothed 5-step running 
 average shows the actual learning trend:
-
-![GRPO reward: raw vs smoothed — full run (trend, not point noise)](docs/assets/grpo-reward-120-steps-raw-smoothed.png)
-
-*Same run, first 55 steps (exploration → early recovery):*
-
-![GRPO reward: first 55 steps, raw vs smoothed](docs/assets/grpo-reward-first-55-steps.png)
 
 | Phase | Steps | Smoothed Reward | What's Happening |
 |---|---|---|---|
@@ -240,34 +233,32 @@ average shows the actual learning trend:
 **After GRPO (trained model):** 2.11  
 **Delta: +1.27**
 
-![CompliancePatchBench — GRPO training results: reward over training vs before/after on the same 7 tasks](docs/assets/grpo-before-after-training-results.png)
-
 ### Why 120 steps is meaningful, not a limitation
 
-Most RL papers run thousands of steps on dedicated clusters. We ran 120 steps
+Most RL papers run thousands of steps on dedicated clusters. We ran 120 steps 
 on a free T4 GPU in under 2 hours. The +1.27 improvement is real because:
 
-1. **The reward signal is hard to fake.** Every patch executes against live
-   Python code in a CI sandbox. The hidden oracle independently checks for
-   hashed PII, environment fallback secrets, and partial multi-file fixes.
+1. **The reward signal is hard to fake.** Every patch executes against live 
+   Python code in a CI sandbox. The hidden oracle independently checks for 
+   hashed PII, environment fallback secrets, and partial multi-file fixes. 
    A random agent scores –1.0. Our trained agent scores +2.11.
 
-2. **The noise is honest.** We show raw rewards alongside smoothed trends.
-   RL reward curves are noisy — any submission showing a perfectly smooth
+2. **The noise is honest.** We show raw rewards alongside smoothed trends. 
+   RL reward curves are noisy — any submission showing a perfectly smooth 
    rising curve on 120 steps is smoothing away the real signal.
 
-3. **The before/after comparison is on identical tasks.** The heuristic
-   baseline and the trained model ran on the same 7 tasks with the same
+3. **The before/after comparison is on identical tasks.** The heuristic 
+   baseline and the trained model ran on the same 7 tasks with the same 
    eval logic. The delta is not an artifact of eval setup.
 
 ### What more compute would give
 
 With 500+ steps and an A100, we would expect:
-- Hard task success rate to cross 50% (currently limited by multi-file
+- Hard task success rate to cross 50% (currently limited by multi-file 
   reasoning requiring 2+ read_file calls within budget)
-- Cross-file violation detection to generalise beyond the 3 planted
+- Cross-file violation detection to generalise beyond the 3 planted 
   cross-service patterns
-- Cheat resistance to improve as the oracle penalises more sophisticated
+- Cheat resistance to improve as the oracle penalises more sophisticated 
   fake-fix patterns
 
 The environment is the bottleneck, not the model size. That is the point.

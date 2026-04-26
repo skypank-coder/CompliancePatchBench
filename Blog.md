@@ -35,11 +35,11 @@ The agent that plays this game well is one that has learned to read, patch minim
 
 **Episode loop (violations/steps gate, read budget, `write_patch`, `run_ci`, then `finalize_patch` and hidden checks):**
 
-![CompliancePatchBench RL episode loop](docs/assets/env-episode-loop.png)
+![CompliancePatchBench RL episode loop](https://raw.githubusercontent.com/skypank-coder/CompliancePatchBench/ab6bb50/docs/assets/env-episode-loop.png)
 
 On the hardest tasks, a violation is not local to one buffer. **Cross-service trust** is the story where a token minted in `auth_service` is accepted in `user_service` without the right tenant boundary — the kind of chain that static “one file at a time” fixes miss:
 
-![Cross-service IDOR / trust break (task3 microservices)](docs/assets/cross-service-trust-idor.png)
+![Cross-service IDOR / trust break (task3 microservices)](https://raw.githubusercontent.com/skypank-coder/CompliancePatchBench/ab6bb50/docs/assets/cross-service-trust-idor.png)
 
 ## The reward function that cannot be gamed
 
@@ -49,13 +49,13 @@ The next exploit is subtler: **hash PII, wrap the log in `try/except`, or add a 
 
 **Surface CI vs finalize:** the model can look “good” on pattern checks, then lose the game when `finalize_patch` runs `hidden_compliance` — extra penalties for weak-hash PII, secret defaults, partial multi-file shortcuts, and similar.
 
-![write_patch → CI → finalize_patch → hidden_compliance](docs/assets/patch-ci-hidden-oracle.png)
+![write_patch → CI → finalize_patch → hidden_compliance](https://raw.githubusercontent.com/skypank-coder/CompliancePatchBench/ab6bb50/docs/assets/patch-ci-hidden-oracle.png)
 
 ## Training: what GRPO on a real environment looks like
 
 **Architecture:** the policy interacts with `CompliancePatchEnv` (`read_file`, `write_patch`, `run_ci`); rewards go to GRPO; `hidden_compliance` runs on finalize; LoRA weights update from the trainer.
 
-![GRPO training: env, hidden oracle, policy update](docs/assets/grpo-training-architecture.png)
+![GRPO training: env, hidden oracle, policy update](https://raw.githubusercontent.com/skypank-coder/CompliancePatchBench/ab6bb50/docs/assets/grpo-training-architecture.png)
 
 We trained **Qwen2.5-3B-Instruct** with **GRPO** in TRL on top of **Unsloth 4-bit QLoRA** on a **Colab T4** for **120** optimizer steps. The curve is not a smooth hockey stick. Real batch means: batch 1 mean reward **+0.250**, 6/12 success; batch 5 **+0.508**, 5/12; batch 15 **+1.250**, 11/12 success (best); batch 19 **+1.083**, 10/12. Batches 6-14 **collapsed toward -1.0** because **completion length was truncated at 120 tokens**, which is too short for valid `write_patch` JSON. After raising the cap to **256** tokens, batches settled in the +1.0 to +1.25 band. That ugly middle is what honest RL on a real env looks like when your infra has a bug.
 

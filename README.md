@@ -71,7 +71,7 @@ CompliancePatchBench is **OpenEnv-compliant**: `reset()` / `step()` / `state()` 
 
 *Episode flow (read budget, `write_patch`, `run_ci`, then `finalize_patch` and hidden compliance):*
 
-![RL episode loop: violations/steps, context, read_file budget, write_patch, run_ci rewards, finalize + hidden checks](docs/assets/env-episode-loop.png)
+![RL episode loop: violations/steps, context, read_file budget, write_patch, run_ci rewards, finalize + hidden checks](https://raw.githubusercontent.com/skypank-coder/CompliancePatchBench/ab6bb50/docs/assets/env-episode-loop.png)
 
 A typical episode (same interface the policy sees in training and eval):
 
@@ -129,7 +129,7 @@ The hardest part was making the reward uncheateable.
 
 *Surface CI reward vs finalization — `finalize_patch` then `hidden_compliance` can still apply penalties (e.g. weak hash PII, secret defaults, partial multi-file):*
 
-![Patch → CI → finalize_patch → hidden_compliance checks](docs/assets/patch-ci-hidden-oracle.png)
+![Patch → CI → finalize_patch → hidden_compliance checks](https://raw.githubusercontent.com/skypank-coder/CompliancePatchBench/ab6bb50/docs/assets/patch-ci-hidden-oracle.png)
 
 **Anti-cheat, three mechanisms (by design):**
 
@@ -167,7 +167,7 @@ app.logger.info('User %s logged in', str(user.id))
 
 *Example cross-service trust break on `task3_microservices` (auth token vs downstream user fetch — OWASP-A01 / IDOR class pattern):*
 
-![Auth → user service: bearer context, tenant check, cross-service IDOR](docs/assets/cross-service-trust-idor.png)
+![Auth → user service: bearer context, tenant check, cross-service IDOR](https://raw.githubusercontent.com/skypank-coder/CompliancePatchBench/ab6bb50/docs/assets/cross-service-trust-idor.png)
 
 **What each ID stress-tests in one sentence (for judges cross-walking the table):** `task1_single_file` is the pure format-and-edit skill check on a single buffer — one wrong delete is visible immediately. `task2_django_app` spreads obligations across a small Django app so “fix models only” and “fix views only” are both *plausible* failure modes. `task2b_multifile_dependency` encodes a cross-file **serialization** bug where a change in one module must be consistent with a consumer in another file — a toy version of a monorepo footgun. `task3_microservices` is the only row where **four** service folders interact; the 15 ground-truth violations are there to stop a policy from memorizing a single file’s grep pattern. `task4_django_rest` is a DRF surface with a smaller file count but still four distinct issues in one module — a density check on whether the model can work where multiple OWASP and GDPR rules overlap in one class.
 
@@ -181,7 +181,7 @@ app.logger.info('User %s logged in', str(user.id))
 
 *Training stack: model ↔ `CompliancePatchEnv` (with `hidden_compliance` on finalize) ↔ GRPO trainer / LoRA updates:*
 
-![GRPO training: env reward, hidden checks, policy update](docs/assets/grpo-training-architecture.png)
+![GRPO training: env reward, hidden checks, policy update](https://raw.githubusercontent.com/skypank-coder/CompliancePatchBench/ab6bb50/docs/assets/grpo-training-architecture.png)
 
 **What “120 steps” means in this project:** the trainer calls the *same* `CompliancePatchEnv` transition function you can hit on HTTP, rolls out trajectories, and backprops through TRL’s GRPO path on a LoRA-tuned head. The step count is not a synthetic inner loop on a frozen dataset — it is **real** on-policy steps against the live reward structure described above. The Colab T4 run is a budget constraint, not a simplification of the world model; the point is to show the curve moves with *compute you can actually rent*.
 
@@ -222,11 +222,11 @@ The raw reward is noisy by design — this is on-policy RL where the model
 explores different patch strategies per step. The smoothed 5-step running 
 average shows the actual learning trend:
 
-![GRPO reward: raw vs smoothed — full run, 120 trainer steps (trend, not point noise)](docs/assets/grpo-reward-120-steps-raw-smoothed.png)
+![GRPO reward: raw vs smoothed — full run, 120 trainer steps (trend, not point noise)](https://raw.githubusercontent.com/skypank-coder/CompliancePatchBench/ab6bb50/docs/assets/grpo-reward-120-steps-raw-smoothed.png)
 
 *Same run, first 55 steps (exploration → early recovery):*
 
-![GRPO reward: first 55 steps, raw vs smoothed](docs/assets/grpo-reward-first-55-steps.png)
+![GRPO reward: first 55 steps, raw vs smoothed](https://raw.githubusercontent.com/skypank-coder/CompliancePatchBench/ab6bb50/docs/assets/grpo-reward-first-55-steps.png)
 
 | Phase | Steps | Smoothed Reward | What's Happening |
 |---|---|---|---|
@@ -239,7 +239,7 @@ average shows the actual learning trend:
 **After GRPO (trained model):** 2.11  
 **Delta: +1.27**
 
-![CompliancePatchBench — GRPO training results: reward over training (first 55 steps) vs before/after on the same 7 tasks](docs/assets/grpo-before-after-training-results.png)
+![CompliancePatchBench — GRPO training results: reward over training (first 55 steps) vs before/after on the same 7 tasks](https://raw.githubusercontent.com/skypank-coder/CompliancePatchBench/ab6bb50/docs/assets/grpo-before-after-training-results.png)
 
 ### Why 120 steps is meaningful, not a limitation
 
@@ -316,7 +316,7 @@ curl -X POST http://localhost:7860/patch/reset \
 
 **Reproducing training:** the public Colab notebook is the end-to-end path to rerun GRPO with the same token budget and `write_patch` schema as the reported run. The Training Results section already stated the `120 → 256` token hotfix: if you re-run, treat that as a required field for JSON-heavy actions, not an optional “quality of life” knob.
 
-**Local vs Space:** the Space uses the same `Dockerfile` and `api/server.py` entry as this repository; the `reward_curve.png` image referenced above should live at the repository root (or the Space’s static path) so the card renders. If the image is missing, the text and tables in this file still stand — the run that produced the curve is the same one summarized numerically in the batch table.
+**Local vs Space:** the Space uses the same `Dockerfile` and `api/server.py` entry as this repository. Diagrams in this file load from `raw.githubusercontent.com` (pinned to an immutable commit) so the Hub can build the Space without shipping large binaries in the git push to Hugging Face.
 
 **If `uvicorn` fails on import in a clean venv:** install `requirements.txt` first (the API has fewer deps than the full training stack in `project/requirements.txt`). Training-only imports live under `project/`; the **Space** is intentionally API-first so a judge is not asked to install CUDA stacks just to read JSON from `/patch/reset`. When you *do* train, follow the Colab path so the heavy ML stack is the documented path, not a silent local assumption.
 
@@ -348,7 +348,7 @@ CompliancePatchBench/
 
 (That tree is **14 lines** of paths — the “important files only” list for a first read; tests and one-off tools are elsewhere.)
 
-**How to use this file as a judge:** start at “The Problem” (failure modes and tools named), skim “How It Works” and the action table, read “Reward Design” for the non-gameable part, then jump to “Training Results” for the *only* numbers that count on this page. The batch table, before/after block, truncation note, and `reward_curve.png` image are a single run’s evidence chain — the Space just makes the *same* environment callable over HTTP so you are not trust-reading a static PDF.
+**How to use this file as a judge:** start at “The Problem” (failure modes and tools named), skim “How It Works” and the action table, read “Reward Design” for the non-gameable part, then jump to “Training Results” for the *only* numbers that count on this page. The batch table, before/after block, truncation note, and training figures in this file are a single run’s evidence chain — the Space just makes the *same* environment callable over HTTP so you are not trust-reading a static PDF.
 
 **What we did not do:** we did not add a hand-wavy “safety filter” on top of the model output that relabels bad patches as good. The reward is computed from the environment: CI, regression checks, patch shape, and the hidden oracle, all in code you can read from this tree.
 

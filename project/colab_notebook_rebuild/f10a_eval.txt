@@ -1,7 +1,73 @@
+import importlib.util
+import os
+from pathlib import Path
 from environment.patch_env import CompliancePatchEnv
 from unsloth import FastLanguageModel
 from project.utils import clip_model_json_output
 import torch, json
+
+_REPO = Path('/content/CompliancePatchBench')
+if not (_REPO / 'project' / 'hackathon_metrics.py').is_file():
+    _REPO = Path(os.getcwd())
+_HM = _REPO / 'project' / 'hackathon_metrics.py'
+if _HM.is_file():
+    _spec = importlib.util.spec_from_file_location('hackathon_metrics', _HM)
+    _hm = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_hm)
+    episode_summary = _hm.episode_summary
+    print_before_after = _hm.print_before_after
+    print_improvement = _hm.print_improvement
+else:
+    def _row_status(e):
+        vt = int(e.get('violations_total') or 0)
+        if vt == 0:
+            return 'FAIL'
+        vf, hv = int(e.get('violations_fixed') or 0), bool(e.get('hidden_violation'))
+        if vf == vt and not hv:
+            return 'SUCCESS'
+        if vf > 0 or hv:
+            return 'PARTIAL'
+        return 'FAIL'
+    def episode_summary(episodes):
+        n = len(episodes)
+        if not n:
+            return {'success_rate': 0.0, 'avg_reward': 0.0, 'violations_fixed_pct': 0.0, 'hidden_violation_rate': 0.0}
+        sc = sum(1 for e in episodes if _row_status(e) == 'SUCCESS')
+        tot_v = sum(int(e.get('violations_total') or 0) for e in episodes)
+        tot_f = sum(int(e.get('violations_fixed') or 0) for e in episodes)
+        hvr = sum(1 for e in episodes if e.get('hidden_violation')) / n
+        avg = sum(float(e.get('final_score', 0.0)) for e in episodes) / n
+        vfp = (tot_f / tot_v) if tot_v else 0.0
+        return {
+            'success_rate': round(sc / n, 4), 'avg_reward': round(avg, 4),
+            'violations_fixed_pct': round(vfp, 4), 'hidden_violation_rate': round(hvr, 4),
+        }
+    def print_before_after(baseline, trained, title=''):
+        if title:
+            print(title)
+        print()
+        print('BEFORE (baseline):')
+        print(f"  success_rate:          {baseline.get('success_rate', 0.0):.4f}")
+        print(f"  avg_reward:            {baseline.get('avg_reward', 0.0):+.4f}")
+        print(f"  violations_fixed_pct:  {baseline.get('violations_fixed_pct', 0.0):.4f}")
+        print(f"  hidden_violation_rate: {baseline.get('hidden_violation_rate', 0.0):.4f}")
+        print()
+        print('AFTER (trained):')
+        print(f"  success_rate:          {trained.get('success_rate', 0.0):.4f}")
+        print(f"  avg_reward:            {trained.get('avg_reward', 0.0):+.4f}")
+        print(f"  violations_fixed_pct:  {trained.get('violations_fixed_pct', 0.0):.4f}")
+        print(f"  hidden_violation_rate: {trained.get('hidden_violation_rate', 0.0):.4f}")
+    def print_improvement(baseline, trained):
+        b_sr = float(baseline.get('success_rate', 0.0) or 0.0)
+        t_sr = float(trained.get('success_rate', 0.0) or 0.0)
+        b_ar = float(baseline.get('avg_reward', 0.0) or 0.0)
+        t_ar = float(trained.get('avg_reward', 0.0) or 0.0)
+        d_sr_pct = (t_sr - b_sr) / b_sr * 100.0 if b_sr and b_sr > 0 else 0.0
+        d_ar = t_ar - b_ar
+        print()
+        print('IMPROVEMENT (trained vs baseline, same task set):')
+        print(f"  success_rate: {'+' if d_sr_pct >= 0 else ''}{d_sr_pct:.1f}%  (relative)")
+        print(f"  avg_reward:   {'+' if d_ar >= 0 else ''}{d_ar:.4f}  (absolute)")
 
 FastLanguageModel.for_inference(model)
 
@@ -64,7 +130,6 @@ avg_after  = sum(after_scores.values()) / len(after_scores)
 print('-' * 60)
 print(f'{"AVERAGE (final_score)":<32} {avg_before:>8.4f} {avg_after:>8.4f} {avg_after-avg_before:>+8.4f}')
 
-from project.hackathon_metrics import episode_summary, print_before_after, print_improvement
 _t = episode_summary(trained_episodes)
 _b = episode_summary(baseline_episodes)
 print()

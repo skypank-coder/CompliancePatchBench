@@ -8,7 +8,6 @@ import os
 import time
 from typing import List, Optional, Tuple
 
-import numpy as np
 import pandas as pd
 import requests
 import streamlit as st
@@ -31,16 +30,11 @@ HF_UI_SPACE_URL = os.environ.get(
     "https://huggingface.co/spaces/rachana05/CompliancePatchBench-UI",
 )
 
-DEMO_REWARDS = [
-    0.13, 0.18, 0.25, 0.31, 0.42, 0.55, 0.67, 0.78, 0.89, 1.05, 1.18, 1.31,
-]
-
 # Spec demo copy (static educational columns)
 VIOLATION_SNIPPET = (
     'app.logger.info(f"User {user.email} logged in from {request.remote_addr}")'
 )
 BASELINE_SNIPPET = 'app.logger.info("User logged in")'
-RL_SNIPPET = "app.logger.info('User logged in id=%s', str(user.id))"
 
 
 def _safe_get(url: str, timeout: float = 12.0) -> Optional[dict]:
@@ -66,41 +60,6 @@ def _safe_post(url: str, json_body: dict, timeout: float = 30.0) -> Optional[dic
 def check_health(base: str) -> bool:
     data = _safe_get(f"{base.rstrip('/')}/health")
     return bool(data and data.get("status") == "ok")
-
-
-def fetch_learning_rewards(base: str) -> Tuple[List[float], bool, str]:
-    """Returns (rewards, used_api, source_note)."""
-    data = _safe_get(f"{base.rstrip('/')}/rl/learning-curve")
-    if data and isinstance(data.get("learning_curve"), list):
-        curve = data["learning_curve"]
-        rewards = [float(p.get("avg_reward", 0.0)) for p in curve if isinstance(p, dict)]
-        if rewards:
-            return rewards, True, "API /rl/learning-curve"
-
-    # Local file (run from repo root or set CPB_DATA_DIR)
-    root = os.environ.get("CPB_DATA_DIR", "")
-    candidates = [
-        os.path.join(root, "project", "data", "learning_curve.json") if root else "",
-        os.path.join(os.path.dirname(__file__), "..", "project", "data", "learning_curve.json"),
-        "project/data/learning_curve.json",
-        "reward_curve.json",
-    ]
-    for path in candidates:
-        if not path:
-            continue
-        try:
-            p = os.path.abspath(path)
-            if os.path.isfile(p):
-                with open(p, "r", encoding="utf-8") as f:
-                    raw = json.load(f)
-                if isinstance(raw, list):
-                    rewards = [float(x.get("avg_reward", 0.0)) for x in raw if isinstance(x, dict)]
-                    if rewards:
-                        return rewards, False, p
-        except Exception:
-            continue
-
-    return list(DEMO_REWARDS), False, "built-in demo curve"
 
 
 def fetch_benchmark_table(base: str) -> Tuple[pd.DataFrame, bool]:
@@ -185,6 +144,19 @@ st.markdown(
     <style>
     div[data-testid="stMetricValue"] { font-size: 1.35rem; }
     .our-model { color: #0a0; font-weight: 600; }
+    /* Prevent code blocks from being cut off */
+    .stCode code {
+        white-space: pre-wrap !important;
+        word-break: break-word !important;
+    }
+    pre {
+        overflow-x: auto !important;
+        white-space: pre-wrap !important;
+    }
+    /* Make the 3-column comparison table equal width */
+    [data-testid="column"] {
+        min-width: 0 !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -239,7 +211,8 @@ with tab_live:
 
     with c3:
         st.markdown("#### ✅ RL Agent")
-        st.code(RL_SNIPPET, language="python")
+        rl_agent_code = "app.logger.info('User logged in id=%s', str(user.id))"
+        st.code(rl_agent_code, language="python")
         st.success("Passes CI + compliance")
         st.metric("Reward", "+1.70")
 
@@ -262,46 +235,109 @@ with tab_live:
 
 # === Tab 2: Training Progress ======================================================
 with tab_train:
-    rewards, src_api, src_note = fetch_learning_rewards(ENV_BASE_URL)
-    if not rewards:
-        rewards = list(DEMO_REWARDS)
-        src_api = False
-        src_note = "fallback (empty curve)"
-    if not src_api and not check_health(ENV_BASE_URL):
+    # Load reward curve
+    curve_data: List[float] = []
+    from_api = False
+    data_source_note = ""
+
+    try:
+        r = requests.get(f"{ENV_BASE_URL}/rl/learning-curve", timeout=5)
+        if r.status_code == 200:
+            data = r.json()
+            if isinstance(data, list) and len(data) > 0:
+                curve_data = data
+                from_api = True
+            elif isinstance(data, dict):
+                curve_data = data.get("rewards", data.get("reward_history", data.get("learning_curve", [])))
+                from_api = bool(curve_data)
+    except Exception:
+        pass
+
+    if curve_data and len(curve_data) > 0 and isinstance(curve_data[0], dict):
+        curve_data = [float(p.get("avg_reward", 0.0)) for p in curve_data]
+    elif curve_data:
+        curve_data = [float(x) for x in curve_data]
+
+    # Fallback to reward_curve.json on disk
+    if not curve_data or len(curve_data) < 2:
+        try:
+            for path in [
+                "reward_curve.json",
+                "/content/CompliancePatchBench/reward_curve.json",
+            ]:
+                if os.path.exists(path):
+                    with open(path, encoding="utf-8") as f:
+                        raw = json.load(f)
+                    if isinstance(raw, list) and raw:
+                        if isinstance(raw[0], dict):
+                            curve_data = [float(p.get("avg_reward", 0.0)) for p in raw]
+                        else:
+                            curve_data = [float(x) for x in raw]
+                        from_api = False
+                        data_source_note = path
+                    break
+        except Exception:
+            pass
+
+    # Hardcoded fallback from real training run if everything else fails
+    if not curve_data or len(curve_data) < 2:
+        from_api = False
+        curve_data = [
+            -0.07, 0.10, 0.35, 0.06, 0.42, 0.13, 0.16, 0.10, 0.43,
+            -0.27, 0.10, 0.43, 0.16, -0.04, 0.40, 0.36, 0.26, 0.35,
+            0.01, 0.00, 0.39, 0.13, 0.32, 0.36, 0.51, -0.01, 0.08,
+            -0.01, 0.39, -0.02, 0.29, 0.07, -0.19,
+        ]
+        data_source_note = "hardcoded training curve"
+
+    if not from_api and not check_health(ENV_BASE_URL):
         st.warning("Using demo data")
-    elif not src_api:
-        st.caption(f"Source: {src_note}")
-    else:
+    elif from_api:
         st.caption("Loaded from live API")
+    elif data_source_note:
+        st.caption(f"Source: {data_source_note}")
 
-    init_r, final_r = rewards[0], rewards[-1]
-    delta_pct = 0.0
-    if abs(init_r) > 1e-6:
-        delta_pct = (final_r - init_r) / abs(init_r) * 100.0
+    # Compute correctly: use first 3 and last 3 to avoid single-point noise
+    initial_reward = sum(curve_data[:3]) / min(3, len(curve_data))
+    final_reward = sum(curve_data[-3:]) / min(3, len(curve_data))
+    improvement_pct = ((final_reward - initial_reward) / max(abs(initial_reward), 0.001)) * 100
 
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Initial Reward", f"{init_r:.2f}")
-    delta_str = f"{delta_pct:+.0f}%" if abs(init_r) > 1e-9 else None
-    m2.metric("Final Reward", f"{final_r:.2f}", delta=delta_str)
+    col1, col2, m3 = st.columns(3)
+    col1.metric("Initial Reward", f"{initial_reward:.2f}")
+    col2.metric("Final Reward", f"{final_reward:.2f}", f"{improvement_pct:+.0f}%")
     m3.metric("Violations Fixed", "2/3")
 
-    n = len(rewards)
-    idx = list(range(1, n + 1))
-    arr = np.array(rewards, dtype=float)
-    if len(arr) >= 5:
-        smooth = np.convolve(arr, np.ones(5) / 5, mode="valid")
-        smooth_idx = list(range(3, 3 + len(smooth)))
+    if len(curve_data) >= 2:
+        # Build correct DataFrame with step numbers as index
+        step_numbers = list(range(5, len(curve_data) * 5 + 1, 5))
+        df_curve = pd.DataFrame(
+            {
+                "Raw Reward": curve_data,
+            },
+            index=step_numbers,
+        )
+
+        # Add smoothed column (5-step rolling average)
+        if len(curve_data) >= 5:
+            df_curve["Smoothed (5-step avg)"] = (
+                pd.Series(curve_data).rolling(window=5, min_periods=1).mean().values
+            )
+
+        st.subheader("Reward curve (raw + smoothed)")
+        if "Smoothed (5-step avg)" in df_curve.columns:
+            st.line_chart(df_curve, color=["#5B9BD5", "#E8703A"])
+        else:
+            st.line_chart(df_curve, color="#5B9BD5")
+        st.caption(
+            f"Training steps: {step_numbers[0]} → {step_numbers[-1]} | "
+            f"{len(curve_data)} logged batches | "
+            f"Improvement: {initial_reward:.2f} → {final_reward:.2f}"
+        )
     else:
-        smooth = arr
-        smooth_idx = idx
-    dfr = pd.DataFrame({"step": idx, "raw_reward": rewards})
-    dfs = pd.DataFrame({"step": smooth_idx, "smoothed (5)": smooth})
-    st.markdown("**Reward curve (raw + smoothed)**")
-    cht1, cht2 = st.columns(2)
-    with cht1:
-        st.line_chart(dfr.set_index("step"))
-    with cht2:
-        st.line_chart(dfs.set_index("step"))
+        st.warning(
+            "Not enough reward data points to plot curve. "
+            "Ensure the training notebook has run and reward_curve.json is up to date."
+        )
 
     b1, b2 = st.columns(2)
     with b1:

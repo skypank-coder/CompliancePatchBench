@@ -1,4 +1,7 @@
 # Baseline: heuristic agent applies known-good patches
+import importlib.util
+import os
+from pathlib import Path
 from environment.patch_env import CompliancePatchEnv
 
 KNOWN_PATCHES = {
@@ -26,6 +29,53 @@ def heuristic_score(task):
     critique = info.get('critique', {}) or {}
     return float(info.get('final_score', score)), critique
 
+# Load hackathon metrics from file on disk (works even if GitHub clone omitted a pip package path)
+_REPO = Path('/content/CompliancePatchBench')
+if not (_REPO / 'project' / 'hackathon_metrics.py').is_file():
+    _REPO = Path(os.getcwd())
+_HM = _REPO / 'project' / 'hackathon_metrics.py'
+if _HM.is_file():
+    _spec = importlib.util.spec_from_file_location('hackathon_metrics', _HM)
+    _mod = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_mod)
+    episode_summary = _mod.episode_summary
+    print_multi_task_block = _mod.print_multi_task_block
+else:
+    # Fallback: push project/hackathon_metrics.py to your repo, or paste it under project/
+    def _row_status(e):
+        vt = int(e.get('violations_total') or 0)
+        if vt == 0:
+            return 'FAIL'
+        vf, hv = int(e.get('violations_fixed') or 0), bool(e.get('hidden_violation'))
+        if vf == vt and not hv:
+            return 'SUCCESS'
+        if vf > 0 or hv:
+            return 'PARTIAL'
+        return 'FAIL'
+    def episode_summary(episodes):
+        n = len(episodes)
+        if not n:
+            return {'success_rate': 0.0, 'avg_reward': 0.0, 'violations_fixed_pct': 0.0, 'hidden_violation_rate': 0.0}
+        sc = sum(1 for e in episodes if _row_status(e) == 'SUCCESS')
+        tot_v = sum(int(e.get('violations_total') or 0) for e in episodes)
+        tot_f = sum(int(e.get('violations_fixed') or 0) for e in episodes)
+        hvr = sum(1 for e in episodes if e.get('hidden_violation')) / n
+        avg = sum(float(e.get('final_score', 0.0)) for e in episodes) / n
+        vfp = (tot_f / tot_v) if tot_v else 0.0
+        return {
+            'success_rate': round(sc / n, 4), 'avg_reward': round(avg, 4),
+            'violations_fixed_pct': round(vfp, 4), 'hidden_violation_rate': round(hvr, 4),
+        }
+    def print_multi_task_block(tasks):
+        print()
+        print('=' * 60)
+        mf = [t['task_id'] for t in tasks if len(t.get('codebase', {})) > 1]
+        print(f"Training uses {len(tasks)} tasks including multi-file scenarios ({len(mf)} with 2+ source files):")
+        for t in tasks:
+            m = ' (multi-file)' if len(t.get('codebase', {})) > 1 else ''
+            print(f"  * {t.get('task_id', '?')}{m}")
+        print('=' * 60)
+
 print('=== Baseline Scores ===')
 baseline_scores = {}
 baseline_episodes = []
@@ -46,7 +96,9 @@ for task in tasks:
 avg_baseline = sum(baseline_scores.values()) / len(baseline_scores)
 print(f'\n  Average baseline (score): {avg_baseline:.4f}')
 
-from project.hackathon_metrics import episode_summary, print_multi_task_block
+if not _HM.is_file():
+    print('  Note: add project/hackathon_metrics.py to the repo to avoid inline fallback (git pull or push the file).')
+
 print_multi_task_block(tasks)
 _b = episode_summary(baseline_episodes)
 print()

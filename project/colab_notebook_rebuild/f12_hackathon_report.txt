@@ -1,14 +1,74 @@
 # Generalization (held-out generated tasks) + learning-curve figures + final summary
+import importlib.util
 import json
 import os
 from pathlib import Path
 from project.task_generator import generate_tasks
-from project.hackathon_metrics import episode_summary, print_final_summary
-from project.plot_submission_figures import plot_from_learning_curve
 
 REPO = Path('/content/CompliancePatchBench')
 if not (REPO / 'project' / 'hackathon_metrics.py').is_file():
     REPO = Path(os.getcwd())
+_HM = REPO / 'project' / 'hackathon_metrics.py'
+_HMP = REPO / 'project' / 'plot_submission_figures.py'
+
+if _HM.is_file():
+    _spec = importlib.util.spec_from_file_location('hackathon_metrics', _HM)
+    _hmm = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_hmm)
+    episode_summary = _hmm.episode_summary
+    print_final_summary = _hmm.print_final_summary
+else:
+    def _row_status(e):
+        vt = int(e.get('violations_total') or 0)
+        if vt == 0:
+            return 'FAIL'
+        vf, hv = int(e.get('violations_fixed') or 0), bool(e.get('hidden_violation'))
+        if vf == vt and not hv:
+            return 'SUCCESS'
+        if vf > 0 or hv:
+            return 'PARTIAL'
+        return 'FAIL'
+    def episode_summary(episodes):
+        n = len(episodes)
+        if not n:
+            return {'success_rate': 0.0, 'avg_reward': 0.0, 'violations_fixed_pct': 0.0, 'hidden_violation_rate': 0.0}
+        sc = sum(1 for e in episodes if _row_status(e) == 'SUCCESS')
+        tot_v = sum(int(e.get('violations_total') or 0) for e in episodes)
+        tot_f = sum(int(e.get('violations_fixed') or 0) for e in episodes)
+        hvr = sum(1 for e in episodes if e.get('hidden_violation')) / n
+        avg = sum(float(e.get('final_score', 0.0)) for e in episodes) / n
+        vfp = (tot_f / tot_v) if tot_v else 0.0
+        return {
+            'success_rate': round(sc / n, 4), 'avg_reward': round(avg, 4),
+            'violations_fixed_pct': round(vfp, 4), 'hidden_violation_rate': round(hvr, 4),
+        }
+    def print_final_summary(n_tasks, base_sr, train_sr, base_ar=None, train_ar=None, gen_base_sr=None, gen_train_sr=None):
+        print()
+        print('=' * 60)
+        print('FINAL RESULTS SUMMARY')
+        print('=' * 60)
+        print(f'  total_tasks (main eval):  {n_tasks}')
+        print(f'  baseline success_rate:    {base_sr:.4f}')
+        print(f'  trained success_rate:     {train_sr:.4f}')
+        imp = (train_sr - base_sr) / base_sr * 100.0 if base_sr and base_sr > 0 else 0.0
+        print(f'  improvement (success_rate):  {imp:+.1f}%  (relative vs baseline)')
+        if base_ar is not None and train_ar is not None:
+            print(f'  baseline avg_reward:     {base_ar:+.4f}')
+            print(f'  trained avg_reward:      {train_ar:+.4f}')
+            print(f'  improvement (avg_reward):  {train_ar - base_ar:+.4f}')
+        if gen_base_sr is not None and gen_train_sr is not None:
+            print(f'  generalization (held-out):  baseline SR {gen_base_sr:.4f}  |  trained SR {gen_train_sr:.4f}')
+        print('=' * 60)
+
+if _HMP.is_file():
+    _ps = importlib.util.spec_from_file_location('plot_submission_figures', _HMP)
+    _pm = importlib.util.module_from_spec(_ps)
+    _ps.loader.exec_module(_pm)
+    plot_from_learning_curve = _pm.plot_from_learning_curve
+else:
+    def plot_from_learning_curve(rows, out_dir, window=4):
+        print('(Skipping PNG curves: add project/plot_submission_figures.py to repo, then git pull / re-clone.)')
+        return (None, None, None)
 
 def _normalise_task(t: dict) -> dict:
     v = t.get('ground_truth', t.get('violations', []))
@@ -49,7 +109,6 @@ print('  baseline success_rate:  ', f"{g_b['success_rate']:.4f}")
 print('  trained success_rate:   ', f"{g_t['success_rate']:.4f}")
 print()
 
-# Iterative-RL learning curves (data file in repo; documents offline RL policy iteration)
 _lc_path = REPO / 'project' / 'data' / 'learning_curve.json'
 _fig_dir = REPO / 'project' / 'data' / 'figures'
 if _lc_path.is_file():
@@ -59,7 +118,8 @@ if _lc_path.is_file():
             a, b, c = plot_from_learning_curve(_rows, _fig_dir, window=4)
             print('Learning-curve figures (iterative RL on committed log):')
             for p in (a, b, c):
-                print(' ', p)
+                if p:
+                    print(' ', p)
         except Exception as e:
             print('Could not plot learning_curve.json:', e)
 else:

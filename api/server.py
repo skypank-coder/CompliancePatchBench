@@ -6,7 +6,7 @@ import logging
 import os
 import time
 import uuid
-from fastapi import Body, FastAPI, Header, HTTPException, Query, Request
+from fastapi import FastAPI, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, TypeAdapter, ValidationError
@@ -273,7 +273,7 @@ def _read_json_if_exists(path: Path, default):
 
 
 def _load_ui_data() -> dict:
-    """Streamlit/Colab-facing copy; update project/data/ui_data.json after training."""
+    """UI copy for GET /project; update project/data/ui_data.json after training."""
     raw = _read_json_if_exists(PROJECT_DATA / "ui_data.json", {})
     return raw if isinstance(raw, dict) else {}
 
@@ -334,12 +334,20 @@ def rl_learning_curve():
 
 @app.post("/upload-training-log")
 async def upload_training_log(
+    request: Request,
     x_cpb_token: Optional[str] = Header(default=None, alias="X-CPB-Token"),
-    body: Any = Body(...),
+    file: Optional[UploadFile] = File(
+        default=None, description="Raw learning_curve.json (JSON array) from Colab / training run",
+    ),
 ):
     """
-    Push a JSON array of points (or `{\"learning_curve\": [...] }`) to replace `learning_curve.json`.
-    Set Space secret `CPB_TRAINING_UPLOAD_TOKEN` and send the same value in header `X-CPB-Token`.
+    Replace `project/data/learning_curve.json` (read on each GET /training-curve).
+
+    **Auth:** set Space secret `CPB_TRAINING_UPLOAD_TOKEN` and send `X-CPB-Token: <same value>`.
+
+    **Multipart:** `multipart/form-data` with field `file` = full `learning_curve.json` bytes.
+
+    **JSON:** `Content-Type: application/json` with a top-level **array**, or `{"learning_curve": [...]}`.
     """
     expected = (os.environ.get("CPB_TRAINING_UPLOAD_TOKEN") or "").strip()
     if not expected:
@@ -350,17 +358,55 @@ async def upload_training_log(
     if (x_cpb_token or "").strip() != expected:
         raise HTTPException(status_code=403, detail="Invalid or missing `X-CPB-Token` header.")
 
-    if isinstance(body, dict) and "learning_curve" in body:
-        body = body.get("learning_curve")
-    if not isinstance(body, list):
-        raise HTTPException(status_code=400, detail="Body must be a JSON array of points.")
     out_path = PROJECT_DATA / "learning_curve.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if file is not None:
+        content = await file.read()
+        if not content:
+            raise HTTPException(status_code=400, detail="Empty file")
+        try:
+            text = content.decode("utf-8")
+        except UnicodeDecodeError as e:
+            raise HTTPException(status_code=400, detail=f"File must be UTF-8: {e}") from e
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as e:
+            raise HTTPException(status_code=400, detail=f"File must be valid JSON: {e}") from e
+        if not isinstance(data, list):
+            raise HTTPException(status_code=400, detail="JSON root must be a JSON array of training points")
+        with out_path.open("w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        LOGGER.info("upload-training-log: file upload, %d points -> %s", len(data), out_path)
+        print(f"upload-training-log: file upload, {len(data)} points -> {out_path}", flush=True)
+        return {
+            "status": "updated",
+            "ok": True,
+            "wrote": len(data),
+            "path": "project/data/learning_curve.json",
+        }
+
+    try:
+        payload: Any = await request.json()
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail="Send multipart with form field `file`, or a JSON body (array of points).",
+        ) from None
+    if isinstance(payload, dict) and "learning_curve" in payload:
+        payload = payload.get("learning_curve")
+    if not isinstance(payload, list):
+        raise HTTPException(status_code=400, detail="Body must be a JSON array of points.")
     with out_path.open("w", encoding="utf-8") as f:
-        json.dump(body, f, indent=2)
-    LOGGER.info("Wrote %d training points to %s via upload", len(body), out_path)
-    print(f"upload-training-log: wrote {len(body)} points to {out_path}", flush=True)
-    return {"ok": True, "wrote": len(body), "path": "project/data/learning_curve.json"}
+        json.dump(payload, f, indent=2)
+    LOGGER.info("upload-training-log: JSON body, %d points -> %s", len(payload), out_path)
+    print(f"upload-training-log: JSON body, {len(payload)} points -> {out_path}", flush=True)
+    return {
+        "status": "updated",
+        "ok": True,
+        "wrote": len(payload),
+        "path": "project/data/learning_curve.json",
+    }
 
 
 def _classify_per_task_row(row: Dict[str, Any]) -> str:

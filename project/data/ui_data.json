@@ -1,7 +1,6 @@
 {
-  "source": "Update from Colab (evaluate + training) or project scripts; served via GET /project → ui and GET /benchmark",
-  "public_colab_url": "https://colab.research.google.com/drive/1F0MBqJ-eoHk_5yNXChv5oA3mhY9Vln18?usp=sharing",
-  "public_colab_note": "Training notebook; export project/data/*.json after runs. Redeploy API so the UI sees new curves.",
+  "source": "Served via GET /project → ui; edit after training. Optional: public_colab_url for notebook link.",
+  "public_colab_url": "",
   "base_model": "unsloth/mistral-7b-instruct-v0.3-bnb-4bit (from rl_training_log.json when present)",
   "live_demo": {
     "violation_code": "app.logger.info(f\"User {user.email} logged in from {request.remote_addr}\")",

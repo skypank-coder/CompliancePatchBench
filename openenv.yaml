@@ -1,96 +1,307 @@
+# OpenEnv / Meta hackathon metadata for CompliancePatchBench
+# — colab_notebook: paste your public Colab URL when you publish the notebook
 name: compliance-patch-bench
-version: "2.0.0"
+version: 2.0.0
 description: >
-  CompliancePatchBench: A two-agent self-improving compliance environment.
-  Agent 1 (Patcher) receives codebases with flagged GDPR/OWASP/SOC2 violations
-  and must write minimal, correct patches that pass a deterministic CI checker.
-  Agent 2 (Adversary) generates new violations designed to evade the patcher,
-  creating a self-improving adversarial loop. Reward is deterministic and
-  explicitly anti-cheat: patch deletion is penalized -1.0, verbosity is penalized,
-  AST-level minimality is rewarded, and hidden compliance checks penalize
-  shortcut fixes that pass visible tests but still leak data or weaken security.
-
-author: "CompliancePatchBench Team"
+  Two-agent RL environment for compliance-aware code patching. A patcher agent receives Python
+  codebases with GDPR/OWASP/SOC2 violations and writes minimal correct patches that pass a
+  deterministic CI checker. An adversary agent generates harder violations to create a
+  self-improving loop.
+author: skypank-coder
+license: apache-2.0
 tags:
   - openenv
-  - security
   - compliance
   - gdpr
   - owasp
+  - grpo
+  - rl
+  - code-patching
   - self-play
   - world-modeling
   - self-improvement
 
 themes:
-  - "Theme 3.1: Professional Tasks (World Modeling)"
-  - "Theme 4: Self-Improvement via adversarial self-play"
+  - id: "3.1"
+    description: World Modeling — Professional Tasks
+  - id: "4"
+    description: Self-Improvement via adversarial self-play
+
+# Canonical repo + deployed Spaces (this monorepo: HF_SPACE_DEPLOYMENT.md). Edit if you mirror.
+links:
+  github: "https://github.com/skypank-coder/CompliancePatchBench"
+  hf_space_api: "https://huggingface.co/spaces/rachana05/Compliance-patch-bench"
+  colab_notebook: ""
+  hf_adapter: "https://huggingface.co/skypank-coder/compliancepatchbench-grpo-adapter"
 
 tasks:
   - id: task1_single_file
-    name: "Single-file GDPR patch"
+    name: Single-file GDPR patch
     difficulty: easy
-    description: "Patch 3 GDPR violations in a Flask routes.py"
+    description: Patch 3 GDPR violations in a single Flask routes.py. All violations self-contained. Good warm-up task.
     max_steps: 15
     file_budget: 3
-    frameworks: ["GDPR"]
-
+    files: 1
+    violations: 3
+    frameworks:
+      - GDPR
+    expected_score_range:
+      - 0.70
+      - 0.95
   - id: task2_django_app
-    name: "Django multi-file patch"
+    name: Django multi-file patch
     difficulty: medium
-    description: "Patch 8 violations across 5 Django files"
+    description: Patch 8 violations across 5 Django files including models, views, serializers, middleware, settings. No budget pressure — all files readable.
     max_steps: 30
     file_budget: 7
-    frameworks: ["GDPR", "OWASP"]
-
+    files: 5
+    violations: 8
+    frameworks:
+      - GDPR
+      - OWASP
+    expected_score_range:
+      - 0.45
+      - 0.80
   - id: task3_microservices
-    name: "Microservices patch with cross-file reasoning"
+    name: Microservices strategic patch
     difficulty: hard
-    description: "Patch 15 violations across 4 microservices, 7-file read budget"
+    description: Patch 15 violations across 4 microservices (12 files) with only 7 reads. 3 cross-file violations require reading 2 files and connecting the dots. Forces strategic file selection.
     max_steps: 50
     file_budget: 7
-    frameworks: ["GDPR", "OWASP", "SOC2"]
+    files: 12
+    violations: 15
+    frameworks:
+      - GDPR
+      - OWASP
+      - SOC2
+    expected_score_range:
+      - 0.20
+      - 0.74
+    human_ceiling: 0.74
+    note: Ceiling intentionally below 1.0 — 7-read budget over 12 files makes 4 violations unreachable by design
+  - id: task4_generated_easy
+    name: Generated single-violation patch
+    difficulty: easy
+    description: Auto-generated task from task_generator with a single violation. Used for curriculum warm-up during GRPO training.
+    max_steps: 10
+    file_budget: 2
+    files: 1
+    violations: 1
+    frameworks:
+      - GDPR
+      - OWASP
+    expected_score_range:
+      - 0.60
+      - 1.00
+  - id: task5_generated_medium
+    name: Generated multi-violation patch
+    difficulty: medium
+    description: Auto-generated task from task_generator with 2-4 violations across 2-3 files.
+    max_steps: 25
+    file_budget: 5
+    files: 3
+    violations: 3
+    frameworks:
+      - GDPR
+      - OWASP
+      - SOC2
+    expected_score_range:
+      - 0.40
+      - 0.85
 
 action_space:
-  detection_agent:
-    - read_file
-    - search_codebase
-    - flag_violation
-    - propose_fix
-    - finalize_audit
-  patch_agent:
-    - read_file
-    - write_patch
-    - run_ci
-    - finalize_patch
+  patcher_actions:
+    - name: read_file
+      fields:
+        - name: path
+          type: string
+      cost: 1
+      description: Read full content of a file. Returns source code. Budget enforced — agent cannot read all files on hard tasks.
+    - name: write_patch
+      fields:
+        - name: file
+          type: string
+        - name: line_start
+          type: int
+        - name: line_end
+          type: int
+        - name: new_code
+          type: string
+      cost: 0
+      description: Replace lines line_start through line_end with new_code. Patch is syntax-checked before acceptance. Empty new_code counts as deletion and triggers -1.0 penalty.
+    - name: run_ci
+      fields: []
+      cost: 0
+      description: Run the deterministic CI checker on all patched files. Returns per-violation pass/fail with reason. Does not end the episode.
+    - name: finalize_patch
+      fields: []
+      cost: 0
+      terminates: true
+      description: End the episode. Triggers final scoring across all 5 reward components. Returns final_score, critique, and ci_results.
+  adversary_actions:
+    - name: generate_violation
+      fields:
+        - name: file
+          type: string
+        - name: rule_id
+          type: string
+        - name: line_start
+          type: int
+        - name: new_code
+          type: string
+      cost: 0
+      description: Insert a new violation into the codebase designed to evade patcher.
+    - name: finalize_adversary
+      fields: []
+      cost: 0
+      terminates: true
+      description: Submit the adversarial codebase for patcher evaluation.
+
+observation_space:
+  fields:
+    - name: action_result
+      type: string
+      description: Result of the last action in plain text
+    - name: available_files
+      type: list
+      description: "List of objects with filename, size_lines, imports — no content until read_file is called"
+    - name: violations
+      type: list
+      description: "List of objects with file, rule_id, severity, line_start, line_end for each violation to fix"
+    - name: ci_results
+      type: list
+      description: "List of objects with file, rule_id, ci (PASS/FAIL), reason — updated after run_ci"
+    - name: file_reads_remaining
+      type: int
+      description: Remaining read budget
+    - name: step_count
+      type: int
+      description: Steps taken this episode
+    - name: done
+      type: bool
+      description: Whether episode has ended
+    - name: cumulative_reward
+      type: float
+      description: Running total reward
 
 reward_structure:
-  patch_agent:
-    ci_pass: +1.0
-    tests_pass: +0.5
-    minimal_patch: +0.2
-    verbosity_penalty: "-0.3 per extra line changed"
-    deletion_cheat: -1.0
-    hidden_violation_penalty: -0.5
-    partial_fix_penalty: -0.25
-    timeout_penalty: -0.10
-  adversary_agent:
-    evades_patcher: +1.0
-    trivially_detectable: -0.5
-
-safety:
-  max_steps: "Each task has a fixed step limit; max-step termination is penalized."
-  file_budget: "Read budgets limit unrestricted codebase scanning."
-  anti_cheat: "Visible CI, semantic validation, deletion checks, and a hidden oracle are independent reward signals."
-  execution: "Patch CI uses static/syntax checks rather than executing untrusted generated code."
+  per_step:
+    - name: correct_ci_pass
+      value: 1.0
+      description: Violation semantic check passes
+    - name: tests_pass
+      value: 0.5
+      description: No regressions in any file
+    - name: minimal_patch
+      value: 0.2
+      description: AST node delta under 3
+    - name: verbosity_penalty
+      value: -0.3
+      description: Per unnecessary line changed beyond minimum
+    - name: deletion_cheat
+      value: -1.0
+      description: Patch removes flagged line without replacement (always applied, cannot be avoided)
+  terminal_formula: "final_score = (0.60 × violation_F1) + (0.20 × severity_accuracy) + (0.20 × patch_quality)"
+  anti_cheat:
+    - name: deletion_detection
+      description: Fires when patched file has fewer lines at flagged range and no replacement code added. Penalty -1.0 applied before any other reward component.
+    - name: hidden_oracle
+      description: Semantic validator checks for shortcut patterns including PII hashing, try/except suppression, TODO comments, and no-op replacements. These pass visible CI but fail oracle.
+    - name: independent_signals
+      description: 5 reward components computed independently. No single exploit can maximize all simultaneously.
+  adversary:
+    - name: evades_patcher
+      value: 1.0
+      description: Patcher fails 3 consecutive attempts on the generated violation
+    - name: trivially_detectable
+      value: -0.5
+      description: Violation detected by search_codebase without reading file
 
 endpoints:
-  health: "GET /health"
-  tasks: "GET /tasks"
-  benchmark: "GET /benchmark"
-  reset: "POST /reset"
-  step: "POST /step"
-  state: "GET /state"
-  patch_reset: "POST /patch/reset"
-  patch_step: "POST /patch/step"
-  patch_state: "GET /patch/state"
-  leaderboard: "GET /leaderboard"
+  core:
+    - method: GET
+      path: /health
+      description: Liveness; returns service version
+    - method: GET
+      path: /project
+      description: Project summary, RL / UI config pointers, latest learning-curve point
+    - method: GET
+      path: /tasks
+      description: List all tasks with metadata
+    - method: GET
+      path: /benchmark
+      description: Task rows and model baseline scores
+    - method: GET
+      path: /training-curve
+      description: steps + rewards from project/data/learning_curve.json
+    - method: GET
+      path: /rl/learning-curve
+      description: Same payload as /training-curve (alias)
+    - method: POST
+      path: /upload-training-log
+      description: Replace learning_curve.json (multipart file or JSON array); requires X-CPB-Token if CPB_TRAINING_UPLOAD_TOKEN is set
+    - method: GET
+      path: /stats/failure-breakdown
+      description: Eval failure mix
+    - method: GET
+      path: /stats/best-episode
+      description: Best-episode trace for dashboard
+  detection:
+    - method: POST
+      path: /reset
+      description: Start detection episode, returns session_id and observation
+    - method: POST
+      path: /step
+      description: Submit one action, returns observation, reward, done, info
+    - method: GET
+      path: /state
+      description: Current episode state (session_id query param)
+    - method: GET
+      path: /leaderboard
+      description: Top scores by model name
+    - method: POST
+      path: /leaderboard/submit
+      description: Submit score to in-memory leaderboard
+  patch:
+    - method: POST
+      path: /patch/reset
+      description: Start patch episode using task fixtures, returns session_id and observation
+    - method: POST
+      path: /patch/step
+      description: Submit patch action, returns observation, reward, done, info
+    - method: GET
+      path: /patch/state
+      description: Current patch episode state
+
+training:
+  model: unsloth/Qwen2.5-3B-Instruct
+  method: GRPO
+  library: TRL + Unsloth
+  quantization: 4-bit QLoRA
+  hardware: Colab T4 GPU
+  steps_completed: 120
+  adapter_repo: skypank-coder/compliancepatchbench-grpo-adapter
+  grpo_config:
+    max_steps: 120
+    per_device_train_batch_size: 2
+    gradient_accumulation_steps: 2
+    num_generations: 6
+    max_prompt_length: 1536
+    max_completion_length: 256
+    learning_rate: 5.0e-6
+    temperature: 0.7
+    seed: 42
+  results:
+    peak_batch_reward: 1.250
+    peak_batch_success_rate: 0.917
+    batch_15_result: "avg_reward=1.250, 11/12 full fixes"
+    batch_19_result: "avg_reward=1.083, 10/12 full fixes"
+    known_issue_resolved: token truncation bug fixed from 120 to 256 tokens at step ~70
+
+deployment:
+  type: docker
+  port: 7860
+  base_image: "python:3.11-slim"
+  # Matches Dockerfile CMD (app re-exports api.server)
+  entry_point: "uvicorn app:app --host 0.0.0.0 --port 7860 --workers 1"
+  notes: "This repo deploys the FastAPI Space only; no separate frontend Space."

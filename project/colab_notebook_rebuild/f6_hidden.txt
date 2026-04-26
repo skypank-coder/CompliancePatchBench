@@ -1,4 +1,0 @@
-# The hidden compliance check is now built into CISandbox — no extra module needed
-print('Hidden compliance check is handled by CISandbox.check_violation_fixed()')
-print('Patterns cover: hashed PII in logs, to_dict() leaks, hardcoded secrets, SQL injection, XML parsing')
-print('Shown in baseline cell above. Proceeding to model loading.')

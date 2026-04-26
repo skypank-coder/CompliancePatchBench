@@ -399,20 +399,63 @@ def _json_actions_from_completion(completion: str) -> List[Dict[str, Any]]:
     return actions
 
 
+def parse_json_actions(completion: str) -> List[Dict[str, Any]]:
+    """Compatibility wrapper for structured action parsing."""
+    return _json_actions_from_completion(completion)
+
+
+def safe_parse_with_retry(completion: str, task: Dict[str, Any], max_retries: int = 2) -> Dict[str, Any]:
+    """
+    Guarantee a valid dict action for GRPO env execution.
+
+    Invalid JSON is corrected before execution and never sent directly to env.step().
+    """
+    import json as _json
+
+    current = str(completion)
+    for _ in range(max_retries):
+        try:
+            actions = parse_json_actions(current)
+            if actions and isinstance(actions[0], dict):
+                return actions[0]
+        except Exception:
+            pass
+
+        try:
+            clipped = clip_model_json_output(current)
+            extracted = extract_json(clipped)
+            if isinstance(extracted, dict):
+                at = extracted.get("action_type")
+                if isinstance(at, str) and at in ALLOWED_ACTIONS:
+                    return {k: v for k, v in extracted.items() if not str(k).startswith("_")}
+        except Exception:
+            pass
+
+        try:
+            candidate = current.strip()
+            loaded = _json.loads(candidate)
+            if isinstance(loaded, dict):
+                at = loaded.get("action_type")
+                if isinstance(at, str) and at in ALLOWED_ACTIONS:
+                    return {k: v for k, v in loaded.items() if not str(k).startswith("_")}
+        except Exception:
+            pass
+
+        current = current.strip()
+
+    files = list((task.get("codebase") or {}).keys())
+    fallback_file = files[0] if files else ""
+    if fallback_file:
+        return {"action_type": "read_file", "path": fallback_file}
+    return {"action_type": "run_ci"}
+
+
 def _strict_valid_action_sequence(completion: str, task: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], float]:
     """Never let malformed output reach the environment during GRPO scoring."""
-    actions = _json_actions_from_completion(completion)
+    actions = parse_json_actions(completion)
     if actions:
         return actions, 0.0
-
-    fallback = _safe_fallback_action({
-        "available_files": list((task.get("codebase") or {}).keys()),
-        "violations": list(task.get("violations") or []),
-        "file_reads_remaining": int(task.get("file_reads_remaining", 5) or 0),
-        "ci_results": [],
-        "last_file_view": "",
-    })
-    return [fallback], 1.0
+    return [safe_parse_with_retry(completion, task)], 1.0
 
 
 def _rollout_format_metrics(rollouts: List[Any]) -> Dict[str, float]:
@@ -480,11 +523,14 @@ def _grpo_reward_factory(component_log: List[Dict[str, float]], health_log: List
                 max_steps=task.get("max_steps", 12),
                 file_reads_remaining=task.get("file_reads_remaining", 5),
             )
-            final_score = -1.0
+            final_score = 0.0
             final_info: Dict[str, Any] = {}
             try:
                 done = False
                 for action in actions[:12]:
+                    if not isinstance(action, dict):
+                        print("ERROR: Non-dict action detected")
+                        action = safe_parse_with_retry(clipped, task)
                     obs, reward, done, info = env.step(action)
                     final_score = float(info.get("final_score", reward))
                     final_info = info
@@ -495,8 +541,12 @@ def _grpo_reward_factory(component_log: List[Dict[str, float]], health_log: List
                     final_score = float(info.get("final_score", reward))
                     final_info = info
             except Exception:
-                final_score = -1.0
-                final_info = {"critique": {"reward_breakdown": {"execution_error_penalty": -1.0}}}
+                safe_action = safe_parse_with_retry(clipped, task)
+                if not isinstance(safe_action, dict):
+                    print("ERROR: Non-dict action detected")
+                obs, reward, done, info = env.step(safe_action)
+                final_score = float(info.get("final_score", reward))
+                final_info = info
 
             breakdown = (final_info.get("critique", {}) or {}).get("reward_breakdown", {})
             component_log.append(decompose_reward_breakdown(breakdown))

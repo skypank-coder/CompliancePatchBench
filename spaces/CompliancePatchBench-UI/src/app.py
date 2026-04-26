@@ -297,41 +297,43 @@ with tab_train:
     elif data_source_note:
         st.caption(f"Source: {data_source_note}")
 
-    # Compute correctly: use first 3 and last 3 to avoid single-point noise
-    initial_reward = sum(curve_data[:3]) / min(3, len(curve_data))
-    final_reward = sum(curve_data[-3:]) / min(3, len(curve_data))
-    improvement_pct = ((final_reward - initial_reward) / max(abs(initial_reward), 0.001)) * 100
+    if not curve_data:
+        smoothed: List[float] = []
+        initial_reward = 0.0
+        peak_reward = 0.0
+        final_reward = 0.0
+        improvement_pct = 0.0
+        step_numbers: List[int] = []
+    else:
+        smoothed = pd.Series(curve_data).rolling(window=5, min_periods=1).mean().tolist()
+        initial_reward = smoothed[0]
+        peak_reward = max(smoothed)
+        final_reward = smoothed[-1]
+        improvement_pct = ((final_reward - initial_reward) / max(abs(initial_reward), 0.001)) * 100
+        step_numbers = list(range(5, len(curve_data) * 5 + 1, 5))
 
     col1, col2, m3 = st.columns(3)
     col1.metric("Initial Reward", f"{initial_reward:.2f}")
-    col2.metric("Final Reward", f"{final_reward:.2f}", f"{improvement_pct:+.0f}%")
-    m3.metric("Violations Fixed", "2/3")
+    col2.metric("Peak Reward", f"{peak_reward:.2f}", f"↑ from {initial_reward:.2f}")
+    m3.metric("Final Reward (smoothed)", f"{final_reward:.2f}", f"{improvement_pct:+.0f}%")
 
     if len(curve_data) >= 2:
         # Build correct DataFrame with step numbers as index
-        step_numbers = list(range(5, len(curve_data) * 5 + 1, 5))
         df_curve = pd.DataFrame(
             {
                 "Raw Reward": curve_data,
+                "Smoothed (5-step avg)": smoothed,
             },
             index=step_numbers,
         )
 
-        # Add smoothed column (5-step rolling average)
-        if len(curve_data) >= 5:
-            df_curve["Smoothed (5-step avg)"] = (
-                pd.Series(curve_data).rolling(window=5, min_periods=1).mean().values
-            )
-
         st.subheader("Reward curve (raw + smoothed)")
-        if "Smoothed (5-step avg)" in df_curve.columns:
-            st.line_chart(df_curve, color=["#5B9BD5", "#E8703A"])
-        else:
-            st.line_chart(df_curve, color="#5B9BD5")
+        st.line_chart(df_curve, color=["#5B9BD5", "#E8703A"])
         st.caption(
             f"Training steps: {step_numbers[0]} → {step_numbers[-1]} | "
             f"{len(curve_data)} logged batches | "
-            f"Improvement: {initial_reward:.2f} → {final_reward:.2f}"
+            f"Smoothed trend: {smoothed[0]:.2f} → {smoothed[-1]:.2f} | "
+            f"Peak: {peak_reward:.2f} at step {step_numbers[smoothed.index(peak_reward)]}"
         )
     else:
         st.warning(

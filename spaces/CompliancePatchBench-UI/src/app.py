@@ -179,20 +179,8 @@ def _global_dashboard_css() -> str:
     [data-testid="stExpander"] { background: #fff; border-radius: var(--cpb-radius); }
     @keyframes cpb-fadein { from { opacity: 0.88; } to { opacity: 1; } }
     [data-baseweb="tab-panel"] { animation: cpb-fadein 0.45s ease-out; }
-    .cpb-metric-row { display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; margin: 0.5rem 0 1.25rem 0; }
-    .cpb-metric-card {
-        flex: 1; min-width: 200px; background: #fff; border-radius: var(--cpb-radius);
-        padding: 1rem 1.1rem; box-shadow: var(--cpb-card-shadow);
-        border: 1px solid #e2e8f0; transition: transform 0.2s ease, box-shadow 0.2s ease;
-    }
-    .cpb-metric-card:hover { transform: translateY(-3px); box-shadow: 0 8px 28px rgba(15, 23, 42, 0.1); }
-    .cpb-metric-card .icon { font-size: 1.4rem; margin-bottom: 0.3rem; }
-    .cpb-metric-card .label { color: #64748b; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
-    .cpb-metric-card .val { font-size: 1.6rem; font-weight: 700; color: #0f172a; line-height: 1.2; }
-    .cpb-metric-card .delta { font-size: 0.9rem; font-weight: 600; margin-top: 0.35rem; }
-    .cpb-metric-card .delta-up { color: #059669; }
-    .cpb-metric-card .delta-down { color: #dc2626; }
-    .cpb-metric-card .delta-mid { color: #64748b; }
+    [data-testid="stMetricValue"] { font-size: 1.35rem !important; font-weight: 700 !important; }
+    [data-testid="stMetricDelta"] p { font-size: 0.9rem; }
     .cpb-code-wrap {
         background: #0f172a !important; border-radius: 10px !important;
         box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
@@ -206,41 +194,9 @@ def _global_dashboard_css() -> str:
     .cpb-live-col { background: #fff; border-radius: 12px; padding: 0.9rem; border: 1px solid #e2e8f0; min-height: 100%; }
     .cpb-live-baseline { border-color: #fecaca; background: linear-gradient(180deg, #fff 0%, #fff5f5 100%); }
     .cpb-live-rl { border-color: #a7f3d0; background: linear-gradient(180deg, #fff 0%, #f0fdf4 100%); }
-    .cpb-insight {
-        background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
-        border: 1px solid #bfdbfe; border-radius: 12px; padding: 0.9rem 1.1rem; margin-top: 0.75rem;
-        font-size: 0.95rem; color: #1e3a5f; line-height: 1.5;
-    }
     button[kind="primary"] { transition: transform 0.1s ease, box-shadow 0.15s; border-radius: 10px; }
     button[kind="primary"]:active { transform: scale(0.98); }
     </style>
-    """
-
-
-def _format_metric_html(
-    icon: str,
-    label: str,
-    value: str,
-    delta: Optional[str] = None,
-    delta_is_good: Optional[bool] = None,
-) -> str:
-    if delta:
-        if delta_is_good is True:
-            cls = "delta-up"
-        elif delta_is_good is False:
-            cls = "delta-down"
-        else:
-            cls = "delta-mid"
-        delta_html = f'<div class="delta {cls}">{delta}</div>'
-    else:
-        delta_html = ""
-    return f"""
-    <div class="cpb-metric-card">
-        <div class="icon">{icon}</div>
-        <div class="label">{label}</div>
-        <div class="val">{value}</div>
-        {delta_html}
-    </div>
     """
 
 
@@ -332,12 +288,12 @@ def _training_insight_text(
     pstep = int(step_numbers[peak_i]) if step_numbers and peak_i < len(step_numbers) else 0
     if fn >= i0:
         return (
-            f"Model <strong>improves</strong> from <strong>{i0:.2f}</strong> to a <strong>peak of {float(peak_reward):.2f}</strong> (step {pstep}), "
-            f"then finishes near <strong>{fn:.2f}</strong>—late-game wobble is typical of on-policy GRPO exploration."
+            f"Model **improves** from **{i0:.2f}** to a **peak of {float(peak_reward):.2f}** (step {pstep}), "
+            f"then finishes near **{fn:.2f}**—late-game wobble is typical of on-policy GRPO exploration."
         )
     return (
-        f"Smoothed reward moves from <strong>{i0:.2f}</strong> to <strong>{fn:.2f}</strong> with a peak of "
-        f"<strong>{float(peak_reward):.2f}</strong> at step {pstep}. Check logs if the end dip is noise vs regression."
+        f"Smoothed reward moves from **{i0:.2f}** to **{fn:.2f}** with a peak of "
+        f"**{float(peak_reward):.2f}** at step {pstep}. Check logs if the end dip is noise vs regression."
     )
 
 
@@ -581,15 +537,27 @@ with tab_train:
 
     imp_good = final_reward >= initial_reward
     pstep = step_numbers[peak_i] if step_numbers and peak_i < len(step_numbers) else "—"
-    m_html = f'<div class="cpb-metric-row">{_format_metric_html("📉", "Initial reward", f"{initial_reward:+.2f}", None, None)}'
-    m_html += _format_metric_html(
-        "📈", "Peak reward", f"{peak_reward:+.2f}", f"highest @ step {pstep}", None
-    )
-    m_html += _format_metric_html(
-        "🏁", "Final (smoothed)", f"{final_reward:+.2f}", f"Δ {improvement_pct:+.0f}% vs start", imp_good
-    )
-    m_html += "</div>"
-    st.markdown(m_html, unsafe_allow_html=True)
+    # Native st.metric — Streamlit markdown often strips/escapes nested HTML from st.markdown(unsafe_allow_html).
+    mc1, mc2, mc3 = st.columns(3)
+    dsign = f"{improvement_pct:+.0f}%"
+    with mc1:
+        st.metric("📉 Initial reward", f"{initial_reward:+.2f}", border=True)
+    with mc2:
+        st.metric(
+            "📈 Peak reward",
+            f"{peak_reward:+.2f}",
+            f"highest @ step {pstep}" if pstep != "—" else "—",
+            delta_color="off",
+            border=True,
+        )
+    with mc3:
+        st.metric(
+            "🏁 Final (smoothed)",
+            f"{final_reward:+.2f}",
+            f"Δ {dsign} vs start",
+            delta_color="normal" if imp_good else "inverse",
+            border=True,
+        )
 
     if len(curve_data) >= 2 and len(step_numbers) == len(curve_data) == len(smoothed):
         st.markdown("#### Reward over training")
@@ -602,10 +570,9 @@ with tab_train:
         st.caption(
             f"Steps {step_numbers[0]}–{step_numbers[-1]} · {len(curve_data)} logged batches"
         )
+        st.markdown("##### Insight")
         st.markdown(
-            f'<div class="cpb-insight"><strong>Insight</strong> · '
-            f"{_training_insight_text(curve_data, smoothed, step_numbers, peak_reward)}</div>",
-            unsafe_allow_html=True,
+            _training_insight_text(curve_data, smoothed, step_numbers, peak_reward)
         )
     else:
         st.warning(

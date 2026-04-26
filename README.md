@@ -15,7 +15,17 @@ short_description: LLM compliance patches via GRPO; reward resists gaming
 
 **Theme:** World Modeling 3.1 + Self-Improvement 4 · **Model:** Qwen2.5-3B · **Method:** GRPO + Unsloth · **Status:** Trained ✅
 
-🤗 [Live Demo on HF Space](https://huggingface.co/spaces/skypank-coder/CompliancePatchBench) · 📓 [Colab Training Notebook](https://github.com/skypank-coder/CompliancePatchBench/blob/main/project/colab_training.ipynb)
+🤗 [Live Demo on HF Space](https://huggingface.co/spaces/skypank-coder/CompliancePatchBench) · 📓 [Open in Colab](https://colab.research.google.com/drive/1d-rzhyYXo6LrHsMV924lUcNv3663cs-o?usp=sharing)
+
+### Visual overview
+
+| Episode loop (budget → patch → CI → finalize) | GRPO training stack (env → hidden checks → policy update) |
+|--|--|
+| ![Episode loop](docs/assets/env-episode-loop.png) | ![GRPO training architecture](docs/assets/grpo-training-architecture.png) |
+
+| CI vs `finalize_patch` + hidden oracle | Cross-service trust — `task3_microservices` |
+|--|--|
+| ![CI and hidden compliance](docs/assets/patch-ci-hidden-oracle.png) | ![Cross-service IDOR chain](docs/assets/cross-service-trust-idor.png) |
 
 ## The Problem
 
@@ -248,14 +258,13 @@ curl -X POST http://localhost:7860/patch/reset \
 ```
 
 ```bash
-# 3. Train your own agent
-# Open in Colab → Runtime → Run All
-# Link: https://github.com/skypank-coder/CompliancePatchBench/blob/main/project/colab_training.ipynb
+# 3. Train your own agent — open in Colab, Runtime → Run All:
+# https://colab.research.google.com/drive/1d-rzhyYXo6LrHsMV924lUcNv3663cs-o?usp=sharing
 ```
 
 **What you should see after the first `curl`:** a JSON object with a `session_id` (UUID string) and the first observation. Feed that `session_id` into subsequent `POST /patch/step` calls; do not re-reset between steps in the same episode. If you reset again, you start a *new* task hash and a new read budget, which is correct for a training rollout but confusing if you are trying to hand-debug one trace.
 
-**Adapter weights and reproduction:** the fine-tuned LoRA adapter is published on Hugging Face (see “Resources”); the Colab is the end-to-end path to reproduce training with the same token budget and `write_patch` schema. The Training Results section already stated the `120 → 256` token hotfix: if you re-run, treat that as a required field for JSON-heavy actions, not an optional “quality of life” knob.
+**Reproducing training:** the public Colab notebook is the end-to-end path to rerun GRPO with the same token budget and `write_patch` schema as the reported run. The Training Results section already stated the `120 → 256` token hotfix: if you re-run, treat that as a required field for JSON-heavy actions, not an optional “quality of life” knob.
 
 **Local vs Space:** the Space uses the same `Dockerfile` and `api/server.py` entry as this repository; the `reward_curve.png` image referenced above should live at the repository root (or the Space’s static path) so the card renders. If the image is missing, the text and tables in this file still stand — the run that produced the curve is the same one summarized numerically in the batch table.
 
@@ -293,7 +302,7 @@ CompliancePatchBench/
 
 **What we did not do:** we did not add a hand-wavy “safety filter” on top of the model output that relabels bad patches as good. The reward is computed from the environment: CI, regression checks, patch shape, and the hidden oracle, all in code you can read from this tree.
 
-**What we *did* do:** we trained a small instruct model on real compliance patches with a multi-term objective that tracks how enterprises actually get hurt — data leaks, not just syntax errors. The adapter on Hugging Face is optional for understanding the *benchmark*; it is the proof artifact for the *trainability* claim.
+**What we *did* do:** we trained a small instruct model on real compliance patches with a multi-term objective that tracks how enterprises actually get hurt — data leaks, not just syntax errors. The *benchmark* stands on the environment and metrics above; training shows the policy can improve under that signal.
 
 **Why the repo name is *CompliancePatchBench*:** a **bench** is a fixture: it holds a workpiece steady while you measure. The project is not claiming to “solve security”; it is giving judges a *station* where a policy is scored the same way every time, with CI and a hidden pass that a chat transcript cannot hand-wave away.
 
@@ -308,9 +317,8 @@ CompliancePatchBench/
 ## Resources
 
 - 🤗 [HF Space (live demo)](https://huggingface.co/spaces/skypank-coder/CompliancePatchBench)
-- 📓 [Colab notebook](https://github.com/skypank-coder/CompliancePatchBench/blob/main/project/colab_training.ipynb) — [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/skypank-coder/CompliancePatchBench/blob/main/project/colab_training.ipynb)
+- 📓 [Colab (train / reproduce)](https://colab.research.google.com/drive/1d-rzhyYXo6LrHsMV924lUcNv3663cs-o?usp=sharing) — [![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1d-rzhyYXo6LrHsMV924lUcNv3663cs-o?usp=sharing)
 - 🔧 [GitHub repo](https://github.com/skypank-coder/CompliancePatchBench)
-- 🧠 [HF adapter (trained weights)](https://huggingface.co/skypank-coder/compliancepatchbench-grpo-adapter)
 - 📝 Blog post: [`BLOG.md`](BLOG.md) in repository root
 - 🏆 Hackathon: Meta PyTorch OpenEnv Hackathon 2026, Bangalore Finals
 

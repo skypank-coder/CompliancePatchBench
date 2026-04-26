@@ -90,8 +90,7 @@ After the patcher trains, a second **adversary** agent writes new violations mea
 ## Try it
 
 - **Live API (Hugging Face Space):** [huggingface.co/spaces/rachana05/Compliance-patch-bench](https://huggingface.co/spaces/rachana05/Compliance-patch-bench)
-- **Training notebook (GitHub; Open in Colab from the file menu):** [github.com/skypank-coder/CompliancePatchBench/blob/main/project/model_training_.ipynb](https://github.com/skypank-coder/CompliancePatchBench/blob/main/project/model_training_.ipynb)
-- **Public Colab (optional):** [Open in Colab](https://colab.research.google.com/drive/1d-rzhyYXo6LrHsMV924lUcNv3663cs-o?usp=sharing) (same project; `openenv.yaml` stores this under `links.colab_notebook`)
+- **Colab (train / reproduce):** [Open in Colab](https://colab.research.google.com/drive/1d-rzhyYXo6LrHsMV924lUcNv3663cs-o?usp=sharing) — same URL as `openenv.yaml` → `links.colab_notebook`
 - **Code and data:** [github.com/skypank-coder/CompliancePatchBench](https://github.com/skypank-coder/CompliancePatchBench)
 
 

@@ -31,8 +31,8 @@ themes:
 links:
   github: "https://github.com/skypank-coder/CompliancePatchBench"
   hf_space_api: "https://huggingface.co/spaces/rachana05/Compliance-patch-bench"
-  colab_notebook: ""
-  hf_adapter: "https://huggingface.co/skypank-coder/compliancepatchbench-grpo-adapter"
+  colab_notebook: "https://colab.research.google.com/drive/1d-rzhyYXo6LrHsMV924lUcNv3663cs-o?usp=sharing"
+  # Training notebook: use links.colab_notebook (same URL as README / blog).
 
 tasks:
   - id: task1_single_file
@@ -280,7 +280,6 @@ training:
   quantization: 4-bit QLoRA
   hardware: Colab T4 GPU
   steps_completed: 120
-  adapter_repo: skypank-coder/compliancepatchbench-grpo-adapter
   grpo_config:
     max_steps: 120
     per_device_train_batch_size: 2

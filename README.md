@@ -6,7 +6,7 @@ colorTo: blue
 sdk: docker
 pinned: true
 license: apache-2.0
-short_description: RL environment that trains LLMs to fix security violations without cheating
+short_description: LLM compliance patches via GRPO; reward resists gaming
 ---
 
 # CompliancePatchBench 🛡️

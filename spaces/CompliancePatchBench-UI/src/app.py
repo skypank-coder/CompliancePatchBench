@@ -9,7 +9,9 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
 import requests
 import streamlit as st
 
@@ -159,6 +161,220 @@ def run_live_episode(base: str) -> Tuple[Optional[float], bool]:
         return None, False
 
 
+def _global_dashboard_css() -> str:
+    return """
+    <style>
+    :root { --cpb-card-shadow: 0 4px 20px rgba(15, 23, 42, 0.06); --cpb-radius: 12px; }
+    div[data-testid="stAppViewContainer"] {
+        background: linear-gradient(160deg, #f1f5f9 0%, #e2e8f0 50%, #f8fafc 100%) !important;
+    }
+    [data-testid="stHeader"] { background: transparent; }
+    .main .block-container {
+        max-width: 1100px !important;
+        padding: 1.5rem 2.5rem 3rem 2.5rem !important;
+    }
+    h1, h2, h3 { color: #0f172a !important; font-weight: 700 !important; }
+    h2 { font-size: 1.25rem !important; letter-spacing: -0.02em; }
+    .stTabs [data-baseweb="tab-list"] { gap: 8px; background: #fff; border-radius: var(--cpb-radius); padding: 6px; box-shadow: var(--cpb-card-shadow); }
+    [data-testid="stExpander"] { background: #fff; border-radius: var(--cpb-radius); }
+    @keyframes cpb-fadein { from { opacity: 0.88; } to { opacity: 1; } }
+    [data-baseweb="tab-panel"] { animation: cpb-fadein 0.45s ease-out; }
+    .cpb-metric-row { display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; margin: 0.5rem 0 1.25rem 0; }
+    .cpb-metric-card {
+        flex: 1; min-width: 200px; background: #fff; border-radius: var(--cpb-radius);
+        padding: 1rem 1.1rem; box-shadow: var(--cpb-card-shadow);
+        border: 1px solid #e2e8f0; transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .cpb-metric-card:hover { transform: translateY(-3px); box-shadow: 0 8px 28px rgba(15, 23, 42, 0.1); }
+    .cpb-metric-card .icon { font-size: 1.4rem; margin-bottom: 0.3rem; }
+    .cpb-metric-card .label { color: #64748b; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+    .cpb-metric-card .val { font-size: 1.6rem; font-weight: 700; color: #0f172a; line-height: 1.2; }
+    .cpb-metric-card .delta { font-size: 0.9rem; font-weight: 600; margin-top: 0.35rem; }
+    .cpb-metric-card .delta-up { color: #059669; }
+    .cpb-metric-card .delta-down { color: #dc2626; }
+    .cpb-metric-card .delta-mid { color: #64748b; }
+    .cpb-code-wrap {
+        background: #0f172a !important; border-radius: 10px !important;
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+    }
+    .cpb-code-wrap pre, .cpb-code-wrap code { white-space: pre-wrap !important; word-break: break-word !important; font-size: 0.8rem !important; }
+    .stCodeBlock { border-radius: 10px; }
+    [data-testid="column"] { min-width: 0 !important; }
+    .cpb-pill { display: inline-block; padding: 0.2rem 0.55rem; border-radius: 999px; font-size: 0.72rem; font-weight: 700; }
+    .cpb-pill-bad { background: #fee2e2; color: #b91c1c; }
+    .cpb-pill-good { background: #d1fae5; color: #047857; }
+    .cpb-live-col { background: #fff; border-radius: 12px; padding: 0.9rem; border: 1px solid #e2e8f0; min-height: 100%; }
+    .cpb-live-baseline { border-color: #fecaca; background: linear-gradient(180deg, #fff 0%, #fff5f5 100%); }
+    .cpb-live-rl { border-color: #a7f3d0; background: linear-gradient(180deg, #fff 0%, #f0fdf4 100%); }
+    .cpb-insight {
+        background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
+        border: 1px solid #bfdbfe; border-radius: 12px; padding: 0.9rem 1.1rem; margin-top: 0.75rem;
+        font-size: 0.95rem; color: #1e3a5f; line-height: 1.5;
+    }
+    button[kind="primary"] { transition: transform 0.1s ease, box-shadow 0.15s; border-radius: 10px; }
+    button[kind="primary"]:active { transform: scale(0.98); }
+    </style>
+    """
+
+
+def _format_metric_html(
+    icon: str,
+    label: str,
+    value: str,
+    delta: Optional[str] = None,
+    delta_is_good: Optional[bool] = None,
+) -> str:
+    if delta:
+        if delta_is_good is True:
+            cls = "delta-up"
+        elif delta_is_good is False:
+            cls = "delta-down"
+        else:
+            cls = "delta-mid"
+        delta_html = f'<div class="delta {cls}">{delta}</div>'
+    else:
+        delta_html = ""
+    return f"""
+    <div class="cpb-metric-card">
+        <div class="icon">{icon}</div>
+        <div class="label">{label}</div>
+        <div class="val">{value}</div>
+        {delta_html}
+    </div>
+    """
+
+
+def _build_reward_plotly(
+    step_numbers: List[int],
+    curve_data: List[float],
+    smoothed: List[float],
+) -> go.Figure:
+    peak_i = int(np.argmax(smoothed)) if smoothed else 0
+    peak_x = step_numbers[peak_i] if step_numbers else 0
+    peak_y = float(smoothed[peak_i]) if smoothed else 0.0
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=step_numbers,
+            y=curve_data,
+            mode="lines",
+            name="Raw",
+            line=dict(color="rgba(59, 130, 246, 0.5)", width=1.2),
+            hovertemplate="Step %{x}<br>Reward %{y:.3f}<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=step_numbers,
+            y=smoothed,
+            mode="lines",
+            name="Smoothed (5-step)",
+            line=dict(color="rgb(234, 88, 12)", width=2.6),
+            hovertemplate="Step %{x}<br>Smoothed %{y:.3f}<extra></extra>",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=[peak_x],
+            y=[peak_y],
+            mode="markers",
+            name="Peak",
+            marker=dict(size=14, color="#b45309", line=dict(color="#fff", width=2)),
+            hovertemplate="Peak · step %{x}<br>reward %{y:.3f}<extra></extra>",
+        )
+    )
+    fig.add_vline(
+        x=peak_x,
+        line_width=1,
+        line_dash="dash",
+        line_color="rgba(100, 116, 139, 0.55)",
+    )
+    fig.add_annotation(
+        x=peak_x,
+        y=peak_y,
+        xanchor="left",
+        text=f"Peak {peak_y:.2f} @ {peak_x}",
+        showarrow=True,
+        arrowhead=1,
+        ax=32,
+        ay=-36,
+        bgcolor="rgba(255, 255, 255, 0.95)",
+        bordercolor="#e2e8f0",
+        font=dict(size=12, color="#0f172a"),
+    )
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(255,255,255,0.65)",
+        margin=dict(l=50, r=30, t=50, b=50),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, bgcolor="rgba(255,255,255,0.7)"),
+        xaxis_title="Training Step",
+        yaxis_title="Reward",
+        xaxis=dict(gridcolor="rgba(148,163,184,0.25)"),
+        yaxis=dict(gridcolor="rgba(148,163,184,0.25)"),
+        hovermode="x unified",
+        font=dict(family="system-ui, sans-serif", color="#0f172a"),
+        uirevision="cpb-train",
+    )
+    return fig
+
+
+def _training_insight_text(
+    curve_data: List[float],
+    smoothed: List[float],
+    step_numbers: List[int],
+    peak_reward: float,
+) -> str:
+    if not smoothed or not curve_data:
+        return "Load training data from the API or `project/data/learning_curve.json` to see a narrative of model progress."
+    i0, fn = float(smoothed[0]), float(smoothed[-1])
+    peak_i = int(np.argmax(smoothed))
+    pstep = int(step_numbers[peak_i]) if step_numbers and peak_i < len(step_numbers) else 0
+    if fn >= i0:
+        return (
+            f"Model <strong>improves</strong> from <strong>{i0:.2f}</strong> to a <strong>peak of {float(peak_reward):.2f}</strong> (step {pstep}), "
+            f"then finishes near <strong>{fn:.2f}</strong>—late-game wobble is typical of on-policy GRPO exploration."
+        )
+    return (
+        f"Smoothed reward moves from <strong>{i0:.2f}</strong> to <strong>{fn:.2f}</strong> with a peak of "
+        f"<strong>{float(peak_reward):.2f}</strong> at step {pstep}. Check logs if the end dip is noise vs regression."
+    )
+
+
+def _add_benchmark_column(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    badges: List[str] = []
+    for _, r in out.iterrows():
+        try:
+            om = r.get("Our Model")
+            g4 = r.get("GPT-4o")
+            if pd.notna(om) and pd.notna(g4) and float(om) > float(g4):
+                badges.append("↑ beats GPT-4o")
+            else:
+                badges.append("")
+        except (TypeError, ValueError):
+            badges.append("")
+    out["Label"] = badges
+    return out
+
+
+def _style_benchmark_df(df: pd.DataFrame) -> Any:
+    num_cols = [c for c in ("GPT-4o", "GPT-4o-mini", "Our Model") if c in df.columns]
+    s = df.style
+    for col in num_cols:
+        s = s.background_gradient(cmap="RdYlGn", subset=[col], axis=0)
+    if num_cols:
+        s = s.apply(
+            lambda row: [
+                "font-weight: 800; color: #0f172a" if (pd.notna(v) and v == row.max()) else ""
+                for v in row
+            ],
+            axis=1,
+            subset=num_cols,
+        )
+    return s.set_properties(**{"text-align": "center"}, subset=num_cols or None)
+
+
 # --- Page -------------------------------------------------------------------------
 st.set_page_config(
     page_title="CompliancePatchBench",
@@ -166,26 +382,13 @@ st.set_page_config(
     layout="wide",
 )
 
+st.markdown(_global_dashboard_css(), unsafe_allow_html=True)
 st.markdown(
-    """
-    <style>
-    div[data-testid="stMetricValue"] { font-size: 1.35rem; }
-    .our-model { color: #0a0; font-weight: 600; }
-    /* Prevent code blocks from being cut off */
-    .stCode code {
-        white-space: pre-wrap !important;
-        word-break: break-word !important;
-    }
-    pre {
-        overflow-x: auto !important;
-        white-space: pre-wrap !important;
-    }
-    /* Make the 3-column comparison table equal width */
-    [data-testid="column"] {
-        min-width: 0 !important;
-    }
-    </style>
-    """,
+    "<div style='text-align:center;margin-bottom:0.25rem;'>"
+    "<span style='font-size:1.85rem;font-weight:800;letter-spacing:-0.03em;color:#0f172a;'>CompliancePatchBench</span>"
+    "</div>"
+    "<p style='text-align:center;color:#64748b;font-size:0.95rem;margin:0 0 0.5rem 0;'>"
+    "Meta OpenEnv Hackathon 2026 · Real compliance · Hidden checks · No shortcuts</p>",
     unsafe_allow_html=True,
 )
 
@@ -230,7 +433,7 @@ tab_live, tab_train, tab_bench = st.tabs(
 
 # === Tab 1: Live Demo ==============================================================
 with tab_live:
-    st.subheader("Why this benchmark matters")
+    st.markdown("### Why this benchmark matters")
     st.caption(
         "Baselines can pass tests yet break compliance. A trained RL agent fixes code "
         "without deleting audit trails or hiding PII from hidden checks."
@@ -251,30 +454,54 @@ with tab_live:
     except (TypeError, ValueError):
         gr_f = None
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3 = st.columns(3, gap="medium")
 
     with c1:
-        st.markdown("#### 🚨 Violation")
-        st.code(vcode, language="python")
-        st.markdown(f"**Rule:** {rule}  \n**Severity:** {sev}")
+        st.markdown(
+            '<div class="cpb-live-col"><p style="margin:0 0 0.5rem 0">'
+            '<span class="cpb-pill" style="background:#fef3c7;color:#b45309;">Violation</span></p></div>',
+            unsafe_allow_html=True,
+        )
+        st.code(vcode, language="python", line_numbers=False)
+        st.markdown(
+            f'<div class="cpb-live-col" style="margin-top:-0.5rem">'
+            f'<p style="color:#64748b;font-size:0.88rem"><b style="color:#0f172a">Rule</b> {rule}<br/>'
+            f'<b style="color:#0f172a">Severity</b> {sev}</p></div>',
+            unsafe_allow_html=True,
+        )
 
     with c2:
-        st.markdown("#### ❌ Baseline Agent")
-        st.code(bcode, language="python")
-        st.error("Fails hidden constraint (loses auditability)")
+        st.markdown(
+            '<div class="cpb-live-col cpb-live-baseline">'
+            '<p style="margin:0 0 0.5rem 0">'
+            '<span class="cpb-pill cpb-pill-bad">Baseline Agent</span></p></div>',
+            unsafe_allow_html=True,
+        )
+        st.code(bcode, language="python", line_numbers=False)
+        st.markdown('<div class="cpb-live-col cpb-live-baseline">', unsafe_allow_html=True)
+        st.caption("Fails hidden constraint (loses auditability)")
         st.metric("Reward (env)", f"{br_f:+.2f}")
+        st.markdown("</div>", unsafe_allow_html=True)
 
     with c3:
-        st.markdown("#### ✅ RL Agent")
-        st.code(rcode, language="python")
-        st.success("Passes CI + compliance")
+        st.markdown(
+            '<div class="cpb-live-col cpb-live-rl">'
+            '<p style="margin:0 0 0.5rem 0">'
+            '<span class="cpb-pill cpb-pill-good">RL agent</span></p></div>',
+            unsafe_allow_html=True,
+        )
+        st.code(rcode, language="python", line_numbers=False)
+        st.markdown('<div class="cpb-live-col cpb-live-rl">', unsafe_allow_html=True)
+        st.caption("Passes CI + compliance")
         st.metric(
             "Reward (reference)",
             f"{gr_f:+.2f}" if gr_f is not None else "—",
         )
+        st.markdown("</div>", unsafe_allow_html=True)
 
     st.divider()
-    if st.button("▶ Run Live Episode", type="primary", use_container_width=False):
+    st.markdown("<p style='color:#94a3b8;font-size:0.8rem;margin:0.25rem 0 0.5rem 0;'>Connect <code>ENV_BASE_URL</code> to the API Space for a real reset/step episode.</p>", unsafe_allow_html=True)
+    if st.button("▶ Run Live Episode", type="primary", use_container_width=True):
         with st.spinner("Running episode…"):
             time.sleep(0.15)
             score, live_ok = run_live_episode(ENV_BASE_URL)
@@ -289,9 +516,9 @@ with tab_live:
 
     fs = st.session_state.final_score_demo
     if fs is not None:
-        st.metric("Final Score (live)", f"{fs:+.2f}")
+        st.metric("Final score (from env)", f"{fs:+.2f}")
     else:
-        st.metric("Final Score (live)", "—")
+        st.metric("Final score (from env)", "—")
         st.caption("Run an episode to record `final_score` from the API.")
 
 
@@ -335,43 +562,50 @@ with tab_train:
     elif data_source_note:
         st.caption(f"Source: {data_source_note}")
 
+    peak_i = 0
     if not curve_data:
         smoothed: List[float] = []
         initial_reward = 0.0
         peak_reward = 0.0
         final_reward = 0.0
         improvement_pct = 0.0
-        step_numbers: List[int] = []
+        step_numbers = []
     else:
         smoothed = pd.Series(curve_data).rolling(window=5, min_periods=1).mean().tolist()
-        initial_reward = smoothed[0]
-        peak_reward = max(smoothed)
-        final_reward = smoothed[-1]
+        initial_reward = float(smoothed[0])
+        peak_reward = float(max(smoothed))
+        final_reward = float(smoothed[-1])
+        peak_i = int(np.argmax(smoothed))
         improvement_pct = ((final_reward - initial_reward) / max(abs(initial_reward), 0.001)) * 100
         step_numbers = list(range(5, len(curve_data) * 5 + 1, 5))
 
-    col1, col2, m3 = st.columns(3)
-    col1.metric("Initial Reward", f"{initial_reward:.2f}")
-    col2.metric("Peak Reward", f"{peak_reward:.2f}", f"↑ from {initial_reward:.2f}")
-    m3.metric("Final Reward (smoothed)", f"{final_reward:.2f}", f"{improvement_pct:+.0f}%")
+    imp_good = final_reward >= initial_reward
+    pstep = step_numbers[peak_i] if step_numbers and peak_i < len(step_numbers) else "—"
+    m_html = f'<div class="cpb-metric-row">{_format_metric_html("📉", "Initial reward", f"{initial_reward:+.2f}", None, None)}'
+    m_html += _format_metric_html(
+        "📈", "Peak reward", f"{peak_reward:+.2f}", f"highest @ step {pstep}", None
+    )
+    m_html += _format_metric_html(
+        "🏁", "Final (smoothed)", f"{final_reward:+.2f}", f"Δ {improvement_pct:+.0f}% vs start", imp_good
+    )
+    m_html += "</div>"
+    st.markdown(m_html, unsafe_allow_html=True)
 
-    if len(curve_data) >= 2:
-        # Build correct DataFrame with step numbers as index
-        df_curve = pd.DataFrame(
-            {
-                "Raw Reward": curve_data,
-                "Smoothed (5-step avg)": smoothed,
-            },
-            index=step_numbers,
+    if len(curve_data) >= 2 and len(step_numbers) == len(curve_data) == len(smoothed):
+        st.markdown("#### Reward over training")
+        fig = _build_reward_plotly(step_numbers, curve_data, smoothed)
+        st.plotly_chart(
+            fig,
+            use_container_width=True,
+            config={"displayModeBar": True, "displaylogo": False, "modeBarButtonsToRemove": ["lasso2d", "select2d"]},
         )
-
-        st.subheader("Reward curve (raw + smoothed)")
-        st.line_chart(df_curve, color=["#5B9BD5", "#E8703A"])
         st.caption(
-            f"Training steps: {step_numbers[0]} → {step_numbers[-1]} | "
-            f"{len(curve_data)} logged batches | "
-            f"Smoothed trend: {smoothed[0]:.2f} → {smoothed[-1]:.2f} | "
-            f"Peak: {peak_reward:.2f} at step {step_numbers[smoothed.index(peak_reward)]}"
+            f"Steps {step_numbers[0]}–{step_numbers[-1]} · {len(curve_data)} logged batches"
+        )
+        st.markdown(
+            f'<div class="cpb-insight"><strong>Insight</strong> · '
+            f"{_training_insight_text(curve_data, smoothed, step_numbers, peak_reward)}</div>",
+            unsafe_allow_html=True,
         )
     else:
         st.warning(
@@ -404,24 +638,23 @@ with tab_bench:
     if not ok or df.empty:
         st.warning("Backend offline or no benchmark rows — set ENV_BASE_URL to the API Space.")
     else:
-
-        def _green_our_model_col(col: pd.Series) -> List[str]:
-            return ["color: #0a0; font-weight: 600"] * len(col)
-
+        dfx = _add_benchmark_column(df)
+        col_order = [c for c in ("Task", "Difficulty", "GPT-4o", "GPT-4o-mini", "Our Model", "Label") if c in dfx.columns]
+        dfx = dfx[col_order]
         try:
             st.dataframe(
-                df.style.apply(_green_our_model_col, axis=0, subset=["Our Model"]),
-                use_container_width=True,
-                hide_index=True,
-            )
-        except Exception:
-            st.dataframe(
-                df,
+                _style_benchmark_df(dfx),
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "Our Model": st.column_config.NumberColumn("Our Model", format="%.2f")
+                    "Label": st.column_config.TextColumn(" "),
                 },
+            )
+        except Exception:
+            st.dataframe(
+                dfx,
+                use_container_width=True,
+                hide_index=True,
             )
 
     st.divider()

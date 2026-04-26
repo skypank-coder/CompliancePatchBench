@@ -81,7 +81,11 @@ def align_causal_lm_and_tokenizer(model, tokenizer, max_new_tokens: int = GENERA
 
 # ─── System prompt (keep short: completion budget is limited in GRPO) ─────────
 
-SYSTEM_PROMPT = """Output ONLY one JSON action. No prose. No markdown.
+SYSTEM_PROMPT = """Output ONLY valid JSON.
+Do NOT include explanations.
+Do NOT include text outside JSON.
+If unsure, output a safe valid action.
+Output ONLY one JSON action.
 Actions: {"action_type":"read_file","path":"F"} | {"action_type":"write_patch","file":"F","line_start":N,"line_end":N,"new_code":"CODE"} | {"action_type":"run_ci"} | {"action_type":"finalize_patch"}
 Never set new_code to empty string (-1.0 penalty). Fix violations minimally."""
 
@@ -512,6 +516,59 @@ def _heuristic_choose_action(
     return {"action_type": "finalize_patch"}
 
 
+def _safe_fallback_action(
+    obs: Dict[str, Any],
+    read_already: Optional[set[str]] = None,
+    patched_already: Optional[set] = None,
+    ci_runs: int = 0,
+) -> Dict[str, Any]:
+    """
+    Strict fallback ladder for invalid/low-confidence generations.
+
+    Priority:
+      1. read_file
+      2. run_ci
+      3. write_patch (only when a concrete safe patch is known)
+      4. finalize_patch
+    """
+    read_already = read_already or set()
+    patched_already = patched_already or set()
+    available = list(obs.get("available_files") or [])
+    violations = list(obs.get("violations") or [])
+    budget = int(obs.get("file_reads_remaining", 0) or 0)
+    ci_results = list(obs.get("ci_results") or [])
+    fixed_keys = {(r.get("file"), r.get("rule_id")) for r in ci_results if r.get("ci") == "PASS"}
+    file_view = obs.get("last_file_view") or ""
+
+    if available:
+        unread = [f for f in available if f not in read_already]
+        if budget > 0 and unread:
+            return {"action_type": "read_file", "path": unread[0]}
+        if budget > 0:
+            return {"action_type": "read_file", "path": available[0]}
+
+    if ci_runs < 2:
+        return {"action_type": "run_ci"}
+
+    for v in violations:
+        key = (v.get("file"), v.get("rule_id"))
+        loc = (v.get("file"), int(v.get("line_start", 0)), int(v.get("line_end", 0)))
+        if key in fixed_keys or loc in patched_already:
+            continue
+        raw_patch = RULE_PATCHES.get(str(v.get("rule_id", "")))
+        if not raw_patch:
+            continue
+        return {
+            "action_type": "write_patch",
+            "file": v["file"],
+            "line_start": v["line_start"],
+            "line_end": v["line_end"],
+            "new_code": _apply_indent_from_view(file_view, int(v["line_start"]), raw_patch),
+        }
+
+    return {"action_type": "finalize_patch"}
+
+
 def _apply_indent_from_view(file_view: str, line_no: int, raw_patch: str) -> str:
     """
     Re-indent `raw_patch` to match the original line's indentation.
@@ -617,12 +674,6 @@ class ComplianceAgent:
                         f"Step {step:3d} | {at:14s} | r={r_adj:+.3f} | Fixed {vf}/{vt} violations ({note})",
                         flush=True,
                     )
-                pf = int(extra.get("parse_failures", 0) or 0)
-                r_adj -= 0.5 * pf
-                if extra.get("unknown_action"):
-                    r_adj -= 0.5
-                if used_fallback:
-                    r_adj -= 1.0
                 r_adj = clip_reward_value(r_adj)
 
                 result.steps.append(StepRecord(
@@ -739,14 +790,14 @@ class ComplianceAgent:
         to the heuristic policy. Returns
         (action_dict, raw_completion, fallback_used, retries, logprob, extra).
 
-        `extra` contains parse_failures (count of bad attempts) and unknown_action
-        (saw a dict with an invalid action_type) for per-step reward shaping.
+        `extra` contains parse_failures and invalid_output_rate metadata for logging.
         """
         allowed = {"read_file", "write_patch", "run_ci", "finalize_patch"}
         ctx = self._capped_context(messages)
         last_raw = ""
         parse_failures = 0
         saw_unknown_action_type = False
+        total_attempts = self.config.max_retries + 1
         for attempt in range(self.config.max_retries + 1):
             try:
                 raw = self.llm(ctx)
@@ -780,15 +831,15 @@ class ComplianceAgent:
             ctx = ctx + [{
                 "role": "user",
                 "content": (
-                    "Your previous reply was not valid JSON or used an invalid action_type. "
-                    "Reply with ONE JSON object. Allowed action_type values: "
-                    "read_file, write_patch, run_ci, finalize_patch."
+                    "Your previous output was invalid JSON. Output ONLY valid JSON. "
+                    "Do NOT include explanations or text outside JSON. "
+                    "Allowed action_type values: read_file, write_patch, run_ci, finalize_patch."
                 ),
             }]
 
         # All retries exhausted → fallback
         if self.config.use_fallback:
-            action = _heuristic_choose_action(
+            action = _safe_fallback_action(
                 obs,
                 read_already=self._files_already_read(messages),
                 patched_already=_patches_seen(messages),
@@ -801,15 +852,28 @@ class ComplianceAgent:
                 True,
                 self.config.max_retries,
                 0.0,
-                {"parse_failures": parse_failures, "unknown_action": saw_unknown_action_type},
+                {
+                    "parse_failures": parse_failures,
+                    "unknown_action": saw_unknown_action_type,
+                    "invalid_output_rate": parse_failures / max(1, total_attempts),
+                },
             )
         return (
-            {"action_type": "finalize_patch"},
+            _safe_fallback_action(
+                obs,
+                read_already=self._files_already_read(messages),
+                patched_already=_patches_seen(messages),
+                ci_runs=_ci_runs_seen(messages),
+            ),
             last_raw,
             True,
             self.config.max_retries,
             0.0,
-            {"parse_failures": parse_failures, "unknown_action": saw_unknown_action_type},
+            {
+                "parse_failures": parse_failures,
+                "unknown_action": saw_unknown_action_type,
+                "invalid_output_rate": parse_failures / max(1, total_attempts),
+            },
         )
 
     def _capped_context(self, messages: List[Dict[str, str]]) -> List[Dict[str, str]]:

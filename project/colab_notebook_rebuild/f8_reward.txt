@@ -27,7 +27,8 @@ def parse_json_actions(completion: str) -> List[Dict[str, Any]]:
             idx = start + 1
             continue
         idx = start + end_offset
-        if isinstance(obj, dict) and obj.get('action_type') in ALLOWED_ACTIONS:
+        at = obj.get("action_type")
+        if isinstance(obj, dict) and isinstance(at, str) and at in ALLOWED_ACTIONS:
             actions.append(obj)
     return actions
 

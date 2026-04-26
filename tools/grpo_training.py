@@ -26,6 +26,7 @@ from environment.patch_env import CompliancePatchEnv
 from project.agent import (
     GENERATION_MAX_NEW_TOKENS,
     SYSTEM_PROMPT,
+    _safe_fallback_action,
     align_causal_lm_and_tokenizer,
     json_action_eos_token_ids,
 )
@@ -70,6 +71,7 @@ def rollout(model, tokenizer, task_id: str) -> dict:
 
     final_reward = 0.0
     all_completions = []
+    first_file = obs["available_files"][0] if obs.get("available_files") else None
 
     for step in range(20):
         # Format prompt
@@ -91,14 +93,28 @@ def rollout(model, tokenizer, task_id: str) -> dict:
         completion = clip_model_json_output(raw)
         all_completions.append(completion)
 
-        # Parse action
-        try:
-            # Extract JSON from completion
-            import re
-            match = re.search(r'\{.*\}', completion, re.DOTALL)
-            action = json.loads(match.group(0)) if match else {"action_type": "finalize_patch"}
-        except Exception:
-            action = {"action_type": "finalize_patch"}
+        action = None
+        retry_prompt = None
+        for attempt in range(3):
+            candidate = completion if attempt == 0 else retry_prompt or completion
+            match = re.search(r'\{.*\}', candidate, re.DOTALL)
+            try:
+                parsed = json.loads(match.group(0)) if match else None
+            except Exception:
+                parsed = None
+            if isinstance(parsed, dict) and parsed.get("action_type") in {"read_file", "write_patch", "run_ci", "finalize_patch"}:
+                action = parsed
+                break
+            retry_prompt = "Your previous output was invalid JSON. Output ONLY valid JSON."
+
+        if action is None:
+            action = _safe_fallback_action({
+                "available_files": list(obs.get("available_files") or ([first_file] if first_file else [])),
+                "violations": list(obs.get("violations") or []),
+                "file_reads_remaining": int(obs.get("file_reads_remaining", 0) or 0),
+                "ci_results": list(obs.get("ci_results") or []),
+                "last_file_view": obs.get("last_file_view", ""),
+            })
 
         # Step env
         step_resp = call_env("patch/step", {"session_id": session_id, "action": action})
@@ -198,8 +214,14 @@ def train():
                     actions.append(action)
 
             if not actions:
-                rewards.append(-0.3)
-                continue
+                task = TASK_CACHE.get(task_id, TASK_CACHE["task1_single_file"])
+                actions = [_safe_fallback_action({
+                    "available_files": list(task["codebase"].keys()),
+                    "violations": list(task["ground_truth"]),
+                    "file_reads_remaining": int(task.get("file_reads_remaining", 5) or 0),
+                    "ci_results": [],
+                    "last_file_view": "",
+                })]
 
             env = CompliancePatchEnv()
             env.reset(
@@ -238,9 +260,13 @@ def train():
         if avg > best_reward_ever["value"]:
             best_reward_ever = {"value": avg, "step": step_n}
         jrate = 100.0 * jok / max(1, ngen)
+        invalid_rate = 1.0 - (jok / max(1, ngen))
         print("------------------------------------------------------------\n## GRPO BATCH (trainer step %d)\n------------------------------------------------------------" % step_n)
         print("  json=%d/%d  |  JSON validity (batch): %.1f%%" % (jok, ngen, jrate))
+        print("  invalid_output_rate=%.1f%%" % (100.0 * invalid_rate))
         print("  success=%d/%d (reward>0)  |  batch_avg_reward=%+.3f" % (n_ok, len(rewards), avg))
+        if invalid_rate > 0.20:
+            print("High invalid output rate — training unstable")
         print("  → Model improves over time; watch batch_avg_reward trend, not a single step.")
         return rewards
 

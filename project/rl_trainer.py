@@ -60,6 +60,7 @@ from .agent import (
     _ci_runs_seen,
     _patches_seen,
     _read_files_seen,
+    _safe_fallback_action,
     align_causal_lm_and_tokenizer,
     json_action_eos_token_ids,
     make_heuristic_backend,
@@ -390,9 +391,27 @@ def _json_actions_from_completion(completion: str) -> List[Dict[str, Any]]:
             idx = start + 1
             continue
         idx = start + end
-        if isinstance(obj, dict) and obj.get("action_type") in ALLOWED_ACTIONS:
+        at = obj.get("action_type")
+        # str only: model JSON sometimes nests dicts under action_type; dict is unhashable for `x in set`.
+        if isinstance(obj, dict) and isinstance(at, str) and at in ALLOWED_ACTIONS:
             actions.append({k: v for k, v in obj.items() if not str(k).startswith("_")})
     return actions
+
+
+def _strict_valid_action_sequence(completion: str, task: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], float]:
+    """Never let malformed output reach the environment during GRPO scoring."""
+    actions = _json_actions_from_completion(completion)
+    if actions:
+        return actions, 0.0
+
+    fallback = _safe_fallback_action({
+        "available_files": list((task.get("codebase") or {}).keys()),
+        "violations": list(task.get("violations") or []),
+        "file_reads_remaining": int(task.get("file_reads_remaining", 5) or 0),
+        "ci_results": [],
+        "last_file_view": "",
+    })
+    return [fallback], 1.0
 
 
 def _rollout_format_metrics(rollouts: List[Any]) -> Dict[str, float]:
@@ -409,6 +428,7 @@ def _rollout_format_metrics(rollouts: List[Any]) -> Dict[str, float]:
                 n_fb += 1
     return {
         "valid_json_rate": n_ok / max(1, n_steps),
+        "invalid_output_rate": n_fb / max(1, n_steps),
         "fallback_rate": n_fb / max(1, n_steps),
     }
 
@@ -447,18 +467,9 @@ def _grpo_reward_factory(component_log: List[Dict[str, float]], health_log: List
                 "terminated": 1.0 if clipped.rstrip().endswith("}") else 0.0,
             })
             task = json.loads(payload) if isinstance(payload, str) else payload
-            actions = _json_actions_from_completion(clipped)
-            if not actions:
-                component_log.append({
-                    "reward_ci": 0.0,
-                    "reward_minimal": 0.0,
-                    "reward_regression": 0.0,
-                    "reward_penalty": -0.5,
-                })
-                rewards.append(_clip_reward(-0.5))
-                continue
+            actions, invalid_output_rate = _strict_valid_action_sequence(clipped, task)
             # +0.1 shaping when at least one parseable JSON action (matches Colab compliance_patch_reward)
-            json_shaping = 0.1
+            json_shaping = 0.1 if invalid_output_rate == 0.0 else 0.0
 
             env = CompliancePatchEnv()
             env.reset(
@@ -933,6 +944,7 @@ def train_rl(config: Optional[RLConfig] = None) -> Dict[str, Any]:
             "avg_reward": train_summary.get("avg_score", 0.0),
             "success_rate": train_summary.get("overall_success_rate", 0.0),
             "valid_json_rate": fmt_metrics.get("valid_json_rate", 0.0),
+            "invalid_output_rate": fmt_metrics.get("invalid_output_rate", 0.0),
             "fallback_rate": fmt_metrics.get("fallback_rate", 0.0),
             "train_success_rate": train_summary.get("overall_success_rate", 0.0),
             "test_success_rate": test_summary.get("overall_success_rate", 0.0),
@@ -970,11 +982,14 @@ def train_rl(config: Optional[RLConfig] = None) -> Dict[str, Any]:
             f"iter={iteration} avg_reward={point['avg_reward']:.3f} "
             f"success_rate={point['success_rate']:.2%} "
             f"valid_json={point['valid_json_rate']:.2%} "
+            f"invalid_output_rate={point['invalid_output_rate']:.2%} "
             f"fallback={point['fallback_rate']:.2%} "
             f"hidden_violation_rate={point['hidden_violation_rate']:.2%} "
             f"mean_length={point['mean_length']:.1f} "
             f"terminated_length={point['terminated_length']:.1f}"
         )
+        if point["invalid_output_rate"] > 0.20:
+            print("High invalid output rate — training unstable")
         if point["terminated_length"] == 0:
             print("WARNING: model not terminating properly")
 

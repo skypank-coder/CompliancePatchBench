@@ -59,7 +59,7 @@ Colab run also saves an on-policy **GRPO** reward figure (often noisy) under
 |--------|----------------|
 | ![Average reward vs RL Iteration](project/data/figures/reward_curve.png) | Y-axis: **avg_reward**; X-axis: **RL Iteration**; raw + window-smoothed (offline policy-iteration log). |
 | ![Success rate](project/data/figures/success_curve.png) | Y-axis: **success_rate**; X-axis: **RL Iteration**; task success = all fixable violations resolved with no hidden cheat. |
-| ![Hidden violation rate](project/data/figures/hidden_violation_curve.png) | Y-axis: **hidden_violation_rate**; X-axis: **RL Iteration**; lower is better (oracle-caught “safe” failures). |
+| ![JSON validity rate](project/data/figures/json_validity_curve.png) | Y-axis: **valid_json_rate**; X-axis: **RL Iteration**; higher means more structured, parseable actions (raw + smoothed). |
 
 ## Why This RL Cannot Be Cheated
 
@@ -102,7 +102,7 @@ Pipeline:
 heuristic rollouts -> SFT initialization -> online GRPO rollouts -> GRPO-refined policy
 ```
 
-**Submission graphics:** `project/data/figures/reward_curve.png`, `success_curve.png`, `hidden_violation_curve.png` (and optional `grpo_train_reward.png` from the notebook).
+**Submission graphics:** `project/data/figures/reward_curve.png`, `success_curve.png`, `json_validity_curve.png` (and optional `grpo_train_reward.png` from the notebook).
 
 ## OpenEnv Hackathon Checklist
 

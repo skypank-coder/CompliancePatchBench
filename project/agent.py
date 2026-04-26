@@ -28,6 +28,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from .compat_eos import json_action_eos_token_ids
 from .hidden_compliance import run_hidden_compliance_checks
 from .utils import clip_model_json_output, clip_reward_value, extract_json, get_logger
 
@@ -36,28 +37,8 @@ log = get_logger("agent")
 # Decoding: pass max_new_tokens (and only that) to model.generate. JSON span is
 # taken via clip_model_json_output. Stopping: tokenizer EOS + literal `}` token id
 # (see json_action_eos_token_ids) so GRPO completions terminate before the cap.
-GENERATION_MAX_NEW_TOKENS = 150
+GENERATION_MAX_NEW_TOKENS = 256
 STOP_TOKENS = ["}"]  # used only for legacy health heuristics; prefer clip_model_json_output
-
-
-def json_action_eos_token_ids(tokenizer: Any) -> List[int]:
-    """
-    Token IDs that may end a single JSON action: model EOS plus the last token of
-    the string `}` (so generation stops when the JSON object closes).
-    """
-    ids: List[int] = []
-    eos = getattr(tokenizer, "eos_token_id", None)
-    if eos is not None:
-        ids.append(int(eos))
-    try:
-        rb = tokenizer.encode("}", add_special_tokens=False)
-        if rb:
-            x = int(rb[-1])
-            if x not in ids:
-                ids.append(x)
-    except Exception:
-        pass
-    return ids
 
 
 def align_causal_lm_and_tokenizer(model, tokenizer, max_new_tokens: int = GENERATION_MAX_NEW_TOKENS) -> None:
@@ -561,6 +542,7 @@ class AgentConfig:
     context_window: int = 6       # keep last N (user/assistant) messages, plus the system msg
     use_fallback: bool = True
     verbose: bool = False
+    demo_trace: bool = False      # judge-style step lines (use with multi-file tasks)
 
 
 class ComplianceAgent:
@@ -626,6 +608,15 @@ class ComplianceAgent:
                 obs, reward, done, info = env.step(action)
                 next_state_snapshot = _obs_snapshot(obs, task=task)
                 r_adj = float(reward)
+                if self.config.demo_trace:
+                    vf = int(obs.get("violations_fixed", 0) or 0)
+                    vt = max(1, int(obs.get("violations_total", result.violations_total) or 1))
+                    at = str(action.get("action_type", "?"))
+                    note = "good progress" if vf > 0 else "in progress"
+                    print(
+                        f"Step {step:3d} | {at:14s} | r={r_adj:+.3f} | Fixed {vf}/{vt} violations ({note})",
+                        flush=True,
+                    )
                 pf = int(extra.get("parse_failures", 0) or 0)
                 r_adj -= 0.5 * pf
                 if extra.get("unknown_action"):
@@ -714,6 +705,21 @@ class ComplianceAgent:
                 )
             result.failure_type = classify_failure_type(result)
             result.confidence = estimate_confidence(result)
+            if self.config.demo_trace:
+                crit = (info or {}).get("critique", {}) if info else {}
+                ci = crit.get("ci_results") or obs.get("ci_results") or []
+                print("------------------------------------------------------------\n## FINAL RESULT (demo trace)\n------------------------------------------------------------", flush=True)
+                print(f"  Score     :  {result.final_score:+.3f}", flush=True)
+                print(f"  Violations:  {result.violations_fixed}/{result.violations_total} fixed  |  hidden cheat: {result.hidden_violation}", flush=True)
+                if isinstance(ci, list) and ci:
+                    for row in ci[:12]:
+                        rid = row.get("rule_id", "?")
+                        ok = row.get("ci") == "PASS"
+                        print(f"  CI rule   :  {rid}  →  {'PASS' if ok else 'FAIL'}", flush=True)
+                else:
+                    print("  CI        :  (see run logs for per-rule CI detail)", flush=True)
+                print("  → Reward progression above shows the agent learning structured actions step by step.", flush=True)
+                print("------------------------------------------------------------", flush=True)
         except Exception as e:
             log.exception("Rollout crashed for task %s", task.get("task_id"))
             result.error = f"{type(e).__name__}: {e}"

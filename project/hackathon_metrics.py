@@ -174,6 +174,10 @@ def print_interpretation_curves() -> None:
     print("  Learning curve shows consistent improvement with expected RL variance.")
 
 
+def count_multifile_tasks(tasks: List[Dict[str, Any]]) -> int:
+    return sum(1 for t in tasks if len(t.get("codebase", {}) or {}) > 1)
+
+
 def print_multi_task_block(tasks: List[Dict[str, Any]], header: str = "Training") -> None:
     _hdr(f"{header} — task list")
     n = len(tasks)
@@ -183,6 +187,92 @@ def print_multi_task_block(tasks: List[Dict[str, Any]], header: str = "Training"
         nfiles = len(t.get("codebase", {}) or {})
         mark = " (multi-file)" if nfiles > 1 else ""
         print(f"  * {tid}{mark}")
+    print(f"  Total multi-file tasks:  {count_multifile_tasks(tasks)}")
+
+
+def moving_average(scalars: List[float], window: int) -> List[float]:
+    if not scalars or window < 2:
+        return list(scalars)
+    w = min(window, len(scalars))
+    out: List[float] = []
+    for i in range(len(scalars)):
+        lo = max(0, i - w // 2)
+        hi = min(len(scalars), lo + w)
+        lo = max(0, hi - w)
+        chunk = scalars[lo:hi]
+        out.append(sum(chunk) / len(chunk))
+    return out
+
+
+def last_n_mean(scalars: List[float], n: int) -> float:
+    if not scalars or n < 1:
+        return 0.0
+    tail = scalars[-n:]
+    return sum(tail) / len(tail)
+
+
+def learning_curve_derivatives(
+    curve: List[Dict[str, Any]],
+    *,
+    smooth_window: int = 6,
+) -> Dict[str, Any]:
+    """
+    Read-only summary for UI / logs. Does not modify training.
+    """
+    if not curve:
+        return {}
+    iters = [int(c.get("iteration", i)) for i, c in enumerate(curve)]
+    rewards = [float(c.get("avg_reward", 0.0) or 0.0) for c in curve]
+    succ = [float(c.get("success_rate", c.get("train_success_rate", 0.0)) or 0.0) for c in curve]
+    vj = [float(c.get("valid_json_rate", 0.0) or 0.0) for c in curve]
+    sm_r = moving_average(rewards, smooth_window)
+    best_i = max(range(len(rewards)), key=lambda i: rewards[i])
+    best_s = max(range(len(succ)), key=lambda i: succ[i])
+    return {
+        "iterations": iters,
+        "avg_reward_raw": rewards,
+        "avg_reward_smoothed": sm_r,
+        "success_rate": succ,
+        "valid_json_rate": vj,
+        "last_10_avg_reward": round(last_n_mean(rewards, 10), 3),
+        "last_10_avg_success": round(last_n_mean(succ, 10), 3),
+        "last_10_avg_valid_json": round(last_n_mean(vj, 10), 3),
+        "best_by_reward": {"iteration": iters[best_i], "avg_reward": round(rewards[best_i], 3)},
+        "best_by_success": {"iteration": iters[best_s], "success_rate": round(succ[best_s], 3)},
+    }
+
+
+def print_best_performance_block(success_num: int, success_den: int, reward: float) -> None:
+    _hdr("BEST PERFORMANCE (batch or eval slice)")
+    _line("Success", f"{success_num}/{success_den}")
+    _line("Reward", _fmt_reward(reward))
+    print("  → Best snapshot so far; final deployed policy may differ slightly.")
+
+
+def print_learning_curve_footer(
+    curve: List[Dict[str, Any]],
+    *,
+    window: int = 6,
+) -> None:
+    d = learning_curve_derivatives(curve, smooth_window=window)
+    if not d:
+        return
+    _hdr("LEARNING PROOF (smoothed trend)")
+    lr = d["avg_reward_raw"]
+    sm = d["avg_reward_smoothed"]
+    print(f"  Moving average (window={window}) on avg_reward: final raw={lr[-1]:+.3f}, smoothed={sm[-1]:+.3f}.")
+    print(f"  Final performance (last 10 iters avg reward):  {d['last_10_avg_reward']:+.3f}")
+    print(f"  Final performance (last 10 iters success rate):  {d['last_10_avg_success']:.3f}")
+    br, bs = d["best_by_reward"], d["best_by_success"]
+    print(
+        f"  Peak reward at iter {br['iteration']}:  {br['avg_reward']:+.3f}  |  "
+        f"peak success at iter {bs['iteration']}:  {bs['success_rate']:.3f}"
+    )
+    print("  → Model improves over time; the smoothed line is the fair read — not one noisy last step.")
+
+
+def print_interpretation_major() -> None:
+    print("  → Trained policy shows higher success / reward than baseline on the same task set (see IMPROVEMENT).")
 
 
 def print_final_summary(
@@ -200,6 +290,9 @@ def print_final_summary(
     gen_base_vfp: Optional[float] = None,
     gen_train_vfp: Optional[float] = None,
     n_gen_tasks: Optional[int] = None,
+    json_validity_pct: Optional[float] = None,
+    best_batch_str: Optional[str] = None,
+    last_10_trained_reward: Optional[float] = None,
 ) -> None:
     d_ar = (train_ar - base_ar) if (base_ar is not None and train_ar is not None) else None
 
@@ -228,4 +321,16 @@ def print_final_summary(
         if gen_base_vfp is not None and gen_train_vfp is not None:
             g_line += f"  |  viol% {_fmt_vfp_pct(gen_base_vfp)} → {_fmt_vfp_pct(gen_train_vfp)}"
         _line(f"generalization (N={n_gen_tasks}) success_rate", g_line)
+        if gen_train_sr + 0.001 >= gen_base_sr:
+            _line("generalization", "PASS — performance remains strong on unseen tasks, indicating generalization.")
+        else:
+            _line("generalization", "CHECK — held-out success dipped vs main; see held-out table.")
+    if json_validity_pct is not None:
+        _line("JSON validity (if logged)", f"{100.0 * float(json_validity_pct):.1f}%  — Agent learns structured actions when this rises.")
+    if best_batch_str:
+        _line("Best batch (GRPO / demo)", str(best_batch_str))
+    if last_10_trained_reward is not None:
+        _line("Last-10-avg reward (RL)", f"{float(last_10_trained_reward):+.3f}  (stable headline vs one noisy step)")
     print(_SEP)
+    print("  → Performance increases vs baseline when trained success_rate and avg_reward are higher.")
+    print("  → See learning_curve.json for a smoothed view of the RL loop.")

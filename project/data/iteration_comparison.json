@@ -2,41 +2,172 @@
   "iterations": 2,
   "start": {
     "iteration": 0,
-    "avg_reward": 1.45,
-    "success_rate": 0.875,
+    "avg_reward": 1.25,
+    "success_rate": 0.8333,
+    "valid_json_rate": 1.0,
+    "fallback_rate": 0.0,
+    "train_success_rate": 0.8333,
+    "test_success_rate": 1.0,
     "hidden_violation_rate": 0.0,
     "partial_fix_rate": 0.0,
-    "cheat_resistance": 1.0
+    "no_fix_rate": 0.1667,
+    "cheat_resistance": 1.0,
+    "failure_stats": {
+      "hidden_violation": 0,
+      "partial_fix": 0,
+      "no_fix": 1
+    },
+    "test_failure_stats": {
+      "hidden_violation": 0,
+      "partial_fix": 0,
+      "no_fix": 0
+    },
+    "reward_components": {
+      "reward_ci": 7.5,
+      "reward_minimal": 0.2,
+      "reward_regression": 0.0,
+      "reward_penalty": -0.2
+    },
+    "mean_length": 65.3889,
+    "terminated_length": 18.0,
+    "avg_confidence": 0.9185,
+    "high_confidence_wrong": 1,
+    "recovered_tasks": 0,
+    "total_recovered_tasks": 0,
+    "task_weight_summary": {
+      "min": 1.0,
+      "max": 1.0,
+      "adversarial_avg": 0.0
+    }
   },
   "end": {
     "iteration": 1,
-    "avg_reward": 1.625,
-    "success_rate": 1.0,
+    "avg_reward": 1.25,
+    "success_rate": 0.8333,
+    "valid_json_rate": 1.0,
+    "fallback_rate": 0.0,
+    "train_success_rate": 0.8333,
+    "test_success_rate": 1.0,
     "hidden_violation_rate": 0.0,
     "partial_fix_rate": 0.0,
-    "cheat_resistance": 1.0
+    "no_fix_rate": 0.1667,
+    "cheat_resistance": 1.0,
+    "failure_stats": {
+      "hidden_violation": 0,
+      "partial_fix": 0,
+      "no_fix": 1
+    },
+    "test_failure_stats": {
+      "hidden_violation": 0,
+      "partial_fix": 0,
+      "no_fix": 0
+    },
+    "reward_components": {
+      "reward_ci": 7.5,
+      "reward_minimal": 0.2,
+      "reward_regression": 0.0,
+      "reward_penalty": -0.2
+    },
+    "mean_length": 47.4444,
+    "terminated_length": 18.0,
+    "avg_confidence": 0.9185,
+    "high_confidence_wrong": 1,
+    "recovered_tasks": 0,
+    "total_recovered_tasks": 0,
+    "task_weight_summary": {
+      "min": 0.45,
+      "max": 2.88,
+      "adversarial_avg": 0.0
+    }
   },
   "delta": {
-    "avg_reward": 0.175,
-    "success_rate": 0.125,
-    "hidden_violation_rate": 0.0
+    "avg_reward": 0.0,
+    "success_rate": 0.0,
+    "test_success_rate": 0.0,
+    "hidden_violation_rate": 0.0,
+    "partial_fix_rate": 0.0,
+    "recovered_tasks": 0
   },
   "history": [
     {
       "iteration": 0,
-      "avg_reward": 1.45,
-      "success_rate": 0.875,
+      "avg_reward": 1.25,
+      "success_rate": 0.8333,
+      "valid_json_rate": 1.0,
+      "fallback_rate": 0.0,
+      "train_success_rate": 0.8333,
+      "test_success_rate": 1.0,
       "hidden_violation_rate": 0.0,
       "partial_fix_rate": 0.0,
-      "cheat_resistance": 1.0
+      "no_fix_rate": 0.1667,
+      "cheat_resistance": 1.0,
+      "failure_stats": {
+        "hidden_violation": 0,
+        "partial_fix": 0,
+        "no_fix": 1
+      },
+      "test_failure_stats": {
+        "hidden_violation": 0,
+        "partial_fix": 0,
+        "no_fix": 0
+      },
+      "reward_components": {
+        "reward_ci": 7.5,
+        "reward_minimal": 0.2,
+        "reward_regression": 0.0,
+        "reward_penalty": -0.2
+      },
+      "mean_length": 65.3889,
+      "terminated_length": 18.0,
+      "avg_confidence": 0.9185,
+      "high_confidence_wrong": 1,
+      "recovered_tasks": 0,
+      "total_recovered_tasks": 0,
+      "task_weight_summary": {
+        "min": 1.0,
+        "max": 1.0,
+        "adversarial_avg": 0.0
+      }
     },
     {
       "iteration": 1,
-      "avg_reward": 1.625,
-      "success_rate": 1.0,
+      "avg_reward": 1.25,
+      "success_rate": 0.8333,
+      "valid_json_rate": 1.0,
+      "fallback_rate": 0.0,
+      "train_success_rate": 0.8333,
+      "test_success_rate": 1.0,
       "hidden_violation_rate": 0.0,
       "partial_fix_rate": 0.0,
-      "cheat_resistance": 1.0
+      "no_fix_rate": 0.1667,
+      "cheat_resistance": 1.0,
+      "failure_stats": {
+        "hidden_violation": 0,
+        "partial_fix": 0,
+        "no_fix": 1
+      },
+      "test_failure_stats": {
+        "hidden_violation": 0,
+        "partial_fix": 0,
+        "no_fix": 0
+      },
+      "reward_components": {
+        "reward_ci": 7.5,
+        "reward_minimal": 0.2,
+        "reward_regression": 0.0,
+        "reward_penalty": -0.2
+      },
+      "mean_length": 47.4444,
+      "terminated_length": 18.0,
+      "avg_confidence": 0.9185,
+      "high_confidence_wrong": 1,
+      "recovered_tasks": 0,
+      "total_recovered_tasks": 0,
+      "task_weight_summary": {
+        "min": 0.45,
+        "max": 2.88,
+        "adversarial_avg": 0.0
+      }
     }
   ]
 }

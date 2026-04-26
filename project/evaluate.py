@@ -20,7 +20,7 @@ CLI:
     python -m project.evaluate submission --trained-llm hf --model <adapter_or_hf_id> \\
         --write-curves
 
-    # Plot success + hidden_violation curves from project/data/learning_curve.json
+    # Plot reward, success, JSON validity from project/data/learning_curve.json
     python -m project.evaluate curves --out project/data/figures
 """
 
@@ -48,11 +48,14 @@ from .agent import (  # noqa: E402
     make_openai_backend,
 )
 from .hackathon_metrics import (  # noqa: E402
+    learning_curve_derivatives,
     print_baseline_trained_core,
     print_final_summary,
     print_generalization_test,
     print_improvement,
     print_interpretation_curves,
+    print_interpretation_major,
+    print_learning_curve_footer,
     print_multi_task_block,
 )
 from .utils import DATA_DIR, LEARNING_CURVE_PATH, TASKS_PATH, get_logger, read_json, write_json
@@ -191,12 +194,28 @@ def split_main_holdout(tasks: List[Dict], seed: int, holdout_frac: float) -> Tup
     return main_tasks, hold_tasks
 
 
+def _optional_curve_extras() -> Tuple[Optional[float], Optional[float]]:
+    """valid_json_rate from last learning-curve point + last-10 avg reward (read-only)."""
+    p = Path(LEARNING_CURVE_PATH)
+    if not p.is_file():
+        return None, None
+    curve = read_json(str(p))
+    if not isinstance(curve, list) or not curve:
+        return None, None
+    last = curve[-1]
+    vj = float(last.get("valid_json_rate", 0.0) or 0.0)
+    d = learning_curve_derivatives(curve)
+    l10 = float(d.get("last_10_avg_reward", 0.0))
+    return vj, l10
+
+
 def print_hackathon_from_reports(before: Dict, after: Dict, *, same_task_set_note: str) -> None:
     """BEFORE/AFTER/IMPROVEMENT from two full evaluate() report dicts."""
     bh = summary_to_headline(before["summary"])
     ah = summary_to_headline(after["summary"])
     print_baseline_trained_core(bh, ah, same_task_set_note=same_task_set_note)
     print_improvement(bh, ah)
+    print_interpretation_major()
 
 
 def print_hackathon_from_compare_diff(diff: Dict) -> None:
@@ -207,6 +226,7 @@ def print_hackathon_from_compare_diff(diff: Dict) -> None:
         bh, ah, same_task_set_note="(baseline and trained both evaluated on the same ordered task set)"
     )
     print_improvement(bh, ah)
+    print_interpretation_major()
 
 
 # ─── Single-run evaluation ────────────────────────────────────────────────────
@@ -338,33 +358,34 @@ def print_comparison(diff: Dict) -> None:
 def print_summary(report: Dict) -> None:
     """Console summary of a single evaluate() report (used by CLI default path)."""
     s = report["summary"]
-    print("\n---\n## EVALUATION SUMMARY\n---")
+    print("\n------------------------------------------------------------\n## EVALUATION SUMMARY\n------------------------------------------------------------")
     n = s.get("n", 0)
-    print(f"  n                     :  {n}")
-    print(f"  success_rate          :  {s.get('overall_success_rate', 0.0):.3f}")
-    print(f"  avg_reward (avg_score):  {s.get('avg_score', 0.0):+.3f}")
+    print(f"  n                      :  {n}")
+    print(f"  success_rate           :  {s.get('overall_success_rate', 0.0):.3f}")
+    print(f"  avg_reward (avg_score) :  {s.get('avg_score', 0.0):+.3f}")
     vfp = float(s.get("violations_fixed_pct", 0.0) or 0.0)
-    print(f"  violations_fixed_pct  :  {100.0 * vfp:.1f}%")
-    print(f"  hidden_violation_rate :  {100.0 * float(s.get('hidden_violation_rate', 0.0) or 0.0):.1f}%")
-    print(f"  easy_success_rate     :  {s.get('easy_success_rate', 0.0):.3f}")
-    print(f"  medium_success_rate   :  {s.get('medium_success_rate', 0.0):.3f}")
-    print(f"  hard_success_rate     :  {s.get('hard_success_rate', 0.0):.3f}")
+    print(f"  violations_fixed_pct   :  {100.0 * vfp:.1f}%")
+    print(f"  hidden_violation_rate  :  {100.0 * float(s.get('hidden_violation_rate', 0.0) or 0.0):.1f}%")
+    print(f"  easy_success_rate      :  {s.get('easy_success_rate', 0.0):.3f}")
+    print(f"  medium_success_rate    :  {s.get('medium_success_rate', 0.0):.3f}")
+    print(f"  hard_success_rate      :  {s.get('hard_success_rate', 0.0):.3f}")
     sc = s.get("status_counts", {})
     if sc:
         print(
-            f"  status (S/P/F)        :  "
+            f"  status (S/P/F)         :  "
             f"{sc.get('SUCCESS', 0)}/{sc.get('PARTIAL', 0)}/{sc.get('FAIL', 0)}"
         )
-    print(f"  errors                 :  {s.get('errors', 0)}")
+    print(f"  errors                  :  {s.get('errors', 0)}")
     rc = s.get("reward_components", {})
     if rc:
         print(
-            f"  reward_components      :  "
+            f"  reward_components       :  "
             f"ci={rc.get('reward_ci', 0.0):+.3f}  "
             f"minimal={rc.get('reward_minimal', 0.0):+.3f}  "
             f"regression={rc.get('reward_regression', 0.0):+.3f}  "
             f"penalty={rc.get('reward_penalty', 0.0):+.3f}"
         )
+    print("  → These numbers are per-task; compare two runs (baseline vs trained) to see improvement.")
     print("------------------------------------------------------------")
 
 
@@ -393,22 +414,31 @@ def compare_iterations(metrics: List[Dict]) -> Dict:
     }
 
 
-def print_iteration_comparison(metrics: List[Dict]) -> None:
-    """Print compact RL improvement table."""
-    print("\n---\n## RL LEARNING CURVE (per iteration)\n---")
+def print_iteration_comparison(metrics: List[Dict], *, smooth_window: int = 6) -> None:
+    """Print compact RL improvement table with smoothed reward column."""
+    print("\n------------------------------------------------------------\n## RL LEARNING CURVE\n------------------------------------------------------------")
+    d = learning_curve_derivatives(metrics, smooth_window=smooth_window) if metrics else {}
+    sm = d.get("avg_reward_smoothed", [])
+    vj = [float(m.get("valid_json_rate", 0.0) or 0.0) for m in metrics] if metrics else []
     print(
         f"{'iter':>4}  "
-        f"{'avg_reward':>10}  "
+        f"{'avg_rew':>9}  "
+        f"{'smoth':>9}  "
+        f"{'vjson':>7}  "
         f"{'success':>8}  "
         f"{'test_sr':>8}  "
         f"{'hvr':>8}  "
         f"{'recov':>6}"
     )
-    print("-" * 64)
-    for m in metrics:
+    print("-" * 72)
+    for i, m in enumerate(metrics):
+        srm = sm[i] if i < len(sm) else float(m.get("avg_reward", 0.0))
+        vj_i = vj[i] if i < len(vj) else 0.0
         print(
             f"{int(m.get('iteration', 0)):>4}  "
-            f"{float(m.get('avg_reward', 0.0)):>+10.3f}  "
+            f"{float(m.get('avg_reward', 0.0)):>+9.3f}  "
+            f"{float(srm):>+9.3f}  "
+            f"{vj_i:>7.1%}  "
             f"{float(m.get('train_success_rate', m.get('success_rate', 0.0))):>8.3f}  "
             f"{float(m.get('test_success_rate', 0.0)):>8.3f}  "
             f"{float(m.get('hidden_violation_rate', 0.0)):>8.3f}  "
@@ -426,8 +456,12 @@ def print_iteration_comparison(metrics: List[Dict]) -> None:
             f"recovered total={int(last.get('total_recovered_tasks', 0))}  |  "
             f"test_success_rate (last)={float(last.get('test_success_rate', 0.0)):.3f}"
         )
-    print("  Tip: run `python -m project.evaluate curves` for smoothed PNG figures.")
+    print("  → Model improves over time: compare smoth to avg_rew; smoth is the fair trend line.")
+    print("  → Agent learns structured actions when the vjson column trends up (valid JSON rate).")
+    print("  Tip: run `python -m project.evaluate curves --window 6` for judge-ready PNGs.")
     print("------------------------------------------------------------")
+    if metrics:
+        print_learning_curve_footer(metrics, window=smooth_window)
 
 
 # ─── CLI ──────────────────────────────────────────────────────────────────────
@@ -454,16 +488,15 @@ def _write_learning_curve_figures(curve_path: Path, out_dir: Path, window: int) 
     data = read_json(str(curve_path)) if curve_path.is_file() else []
     if not isinstance(data, list) or not data:
         log.warning("No data at %s — skipping curve figures", curve_path)
+        _psf.print_graph_summary(out_dir)
         return []
-    out: List[Path] = []
-    a, b, c = _psf.plot_from_learning_curve(data, out_dir, window=window)
-    for path in (a, b, c):
-        if path:
-            out.append(path)
-            log.info("Wrote %s", path)
+    win: Optional[int] = None if int(window) <= 0 else int(window)
+    a, b, c = _psf.plot_from_learning_curve(data, out_dir, window=win, skip_existing=True)
+    out = [p for p in (a, b, c) if p]
     if out:
         print()
         print_interpretation_curves()
+    _psf.print_graph_summary(out_dir)
     return out
 
 
@@ -482,6 +515,11 @@ def _parse_args() -> argparse.Namespace:
         "--list-tasks",
         action="store_true",
         help="Print task_id list and (multi-file) tags before running (readability).",
+    )
+    run_p.add_argument(
+        "--demo-trace",
+        action="store_true",
+        help="Per-step judge-style log (multi-file task recommended).",
     )
 
     cmp_p = sub.add_parser("compare", help="Compare two saved evaluation reports")
@@ -526,19 +564,29 @@ def _parse_args() -> argparse.Namespace:
         "--plot-out",
         type=str,
         default="",
-        help="If set, also write success/hidden_violation/reward PNGs to this directory (matplotlib).",
+        help="If set, also write reward/success/JSON-validity PNGs to this directory (matplotlib).",
     )
-    iter_p.add_argument("--window", type=int, default=4, help="Smoothing window for --plot-out figures.")
+    iter_p.add_argument(
+        "--window",
+        type=int,
+        default=0,
+        help="Smoothing window for --plot-out (0 = auto: 5 or 7 from series length).",
+    )
 
-    cur_p = sub.add_parser("curves", help="Plot success & hidden-violation curves from learning_curve.json")
+    cur_p = sub.add_parser("curves", help="Plot reward, success rate, and JSON validity from learning_curve.json")
     cur_p.add_argument("--input", type=str, default=str(LEARNING_CURVE_PATH))
     cur_p.add_argument(
         "--out",
         type=str,
         default=str(DATA_DIR / "figures"),
-        help="Output directory (writes success_curve.png, hidden_violation_curve.png, reward_curve.png)",
+        help="Output directory (reward_curve.png, success_curve.png, json_validity_curve.png; skips existing).",
     )
-    cur_p.add_argument("--window", type=int, default=4)
+    cur_p.add_argument(
+        "--window",
+        type=int,
+        default=0,
+        help="Moving-average window (0 = auto: 5 if n<14 else 7).",
+    )
 
     sub_p = sub.add_parser(
         "submission",
@@ -591,9 +639,14 @@ def _parse_args() -> argparse.Namespace:
     sub_p.add_argument(
         "--write-curves",
         action="store_true",
-        help="Write success / hidden_violation / reward PNGs to project/data/figures (needs curve file).",
+        help="Write reward / success / JSON validity PNGs to project/data/figures (needs curve file).",
     )
-    sub_p.add_argument("--curve-window", type=int, default=4, help="Smoothing window for --write-curves.")
+    sub_p.add_argument(
+        "--curve-window",
+        type=int,
+        default=0,
+        help="Smoothing for --write-curves (0 = auto: 5 or 7 from series length).",
+    )
     sub_p.add_argument(
         "--curve-out",
         type=str,
@@ -602,7 +655,7 @@ def _parse_args() -> argparse.Namespace:
 
     # Default subcommand for convenience
     p.set_defaults(cmd="run", tasks=str(TASKS_PATH), tag="baseline", llm="heuristic",
-                   model="gpt-4o-mini", max_steps=16, max_tasks=0, list_tasks=False)
+                   model="gpt-4o-mini", max_steps=16, max_tasks=0, list_tasks=False, demo_trace=False)
     return p.parse_args()
 
 
@@ -628,6 +681,7 @@ def main() -> None:
                 gen_bh, gen_ah, n_tasks=n_gen, gen_seed=int(args.gen_seed)
             )
         s0, s1 = summary_to_headline(before["summary"]), summary_to_headline(after["summary"])
+        vj_opt, l10_opt = _optional_curve_extras()
         print_final_summary(
             n_tasks=int(before["summary"].get("n", 0)),
             base_sr=s0["success_rate"],
@@ -643,6 +697,8 @@ def main() -> None:
             gen_base_vfp=gen_bh["violations_fixed_pct"] if gen_bh is not None else None,
             gen_train_vfp=gen_ah["violations_fixed_pct"] if gen_ah is not None else None,
             n_gen_tasks=(n_gen if (gen_bh is not None) else None),
+            json_validity_pct=vj_opt,
+            last_10_trained_reward=l10_opt,
         )
         if args.format in ("full", "both"):
             print_comparison(diff)
@@ -653,7 +709,7 @@ def main() -> None:
         metrics = read_json(args.metrics)
         diff = compare_iterations(metrics)
         write_json(args.out, diff)
-        print_iteration_comparison(metrics)
+        print_iteration_comparison(metrics, smooth_window=int(args.window))
         log.info("Iteration comparison written → %s", args.out)
         if getattr(args, "plot_out", None) and str(args.plot_out).strip():
             _write_learning_curve_figures(Path(args.metrics), Path(args.plot_out), int(args.window))
@@ -707,6 +763,7 @@ def main() -> None:
 
         sm = summary_to_headline(rep_mb["summary"])
         smt = summary_to_headline(rep_mt["summary"])
+        vj_opt, l10_opt = _optional_curve_extras()
         print_final_summary(
             n_tasks=len(main_tasks),
             base_sr=sm["success_rate"],
@@ -722,6 +779,8 @@ def main() -> None:
             gen_base_vfp=gen_base_h["violations_fixed_pct"] if gen_base_h is not None else None,
             gen_train_vfp=gen_train_h["violations_fixed_pct"] if gen_train_h is not None else None,
             n_gen_tasks=(len(hold_tasks) if (hold_tasks and gen_base_h is not None) else None),
+            json_validity_pct=vj_opt,
+            last_10_trained_reward=l10_opt,
         )
         if bool(args.write_curves) and str(args.learning_curve):
             _write_learning_curve_figures(
@@ -738,7 +797,7 @@ def main() -> None:
     log.info("Evaluating on %d tasks (%s backend)", len(tasks), args.llm)
 
     llm = _build_llm(args)
-    config = AgentConfig(max_steps=args.max_steps)
+    config = AgentConfig(max_steps=args.max_steps, demo_trace=bool(getattr(args, "demo_trace", False)))
     report = evaluate(tasks, llm=llm, config=config)
 
     out_path = DATA_DIR / f"eval_{args.tag}.json"

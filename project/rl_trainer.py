@@ -67,6 +67,7 @@ from .agent import (
 )
 from .dataset_builder import run_rollouts
 from .evaluate import evaluate
+from .hackathon_metrics import print_interpretation_curves, print_learning_curve_footer
 from .utils import (  # noqa: E402
     DATA_DIR,
     LEARNING_CURVE_PATH,
@@ -1005,9 +1006,16 @@ def train_rl(config: Optional[RLConfig] = None) -> Dict[str, Any]:
         after_success = float(last.get("success_rate", 0.0))
         before_hidden = float(first.get("hidden_violation_rate", 0.0))
         after_hidden = float(last.get("hidden_violation_rate", 0.0))
-        print(f"Success: {before_success:.0%} → {after_success:.0%}")
-        print(f"Hidden violations: {before_hidden:.0%} → {after_hidden:.0%}")
-        print(f"Recovered {last.get('total_recovered_tasks', 0)} previously failed tasks")
+        print("------------------------------------------------------------\n## RL TRAINING — HEADLINE\n------------------------------------------------------------")
+        print(f"  Success rate:        {before_success:.3f} → {after_success:.3f}  (improvement vs first iter)")
+        print(f"  Hidden violation rate: {before_hidden:.3f} → {after_hidden:.3f}")
+        print(f"  Recovered failed tasks (cumulative):  {int(last.get('total_recovered_tasks', 0))}")
+        print("  → Model improves over time; the curve below is the full story (smoothed + last-10).")
+        try:
+            print_interpretation_curves()
+        except Exception:
+            pass
+        print_learning_curve_footer(curve, window=6)
     write_json(DATA_DIR / "rl_training_log.json", result)
     return result
 

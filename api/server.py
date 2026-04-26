@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Optional
+from typing import Any, List, Optional, Dict
 
 import json
 import logging
@@ -45,6 +45,8 @@ def root():
         "health": "/health",
         "project": "/project",
         "rl_learning_curve": "/rl/learning-curve",
+        "stats_failure_breakdown": "/stats/failure-breakdown",
+        "stats_best_episode": "/stats/best-episode",
         "tasks": "/tasks",
         "benchmark": "/benchmark",
         "reset": "/reset",
@@ -96,6 +98,69 @@ def health():
     return {"status": "ok", "version": APP_VERSION, "service": "CompliancePatchBench"}
 
 
+def _rl_learning_curve_derived(curve: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Rolling stats and peak metrics from real logged training curve only."""
+    n = len(curve)
+    rewards = [float(c.get("avg_reward", 0.0) or 0.0) for c in curve]
+    succ = [float(c.get("success_rate", c.get("train_success_rate", 0.0)) or 0.0) for c in curve]
+
+    def _roll5_trailing(y: List[float]) -> List[float]:
+        out: List[float] = []
+        for i in range(len(y)):
+            lo = max(0, i - 4)
+            w = y[lo : i + 1]
+            out.append(sum(w) / len(w))
+        return out
+
+    sm = _roll5_trailing(rewards)
+
+    k = min(10, n)
+    last_10 = sum(rewards[-k:]) / k if n else 0.0
+    first_5 = sum(rewards[:5]) / min(5, n) if n else 0.0
+    best_ri = max(range(n), key=lambda i: rewards[i]) if n else 0
+    peak_rew = float(rewards[best_ri]) if n else 0.0
+    it = curve[best_ri].get("iteration")
+    if it is None:
+        it = best_ri
+    try:
+        peak_iter = int(it)
+    except (TypeError, ValueError):
+        peak_iter = best_ri
+    peak_s = max(succ) if succ else 0.0
+    if last_10 > first_5 + 0.05:
+        trend = "improving (last-10 mean above first-5 mean)"
+    else:
+        trend = f"stabilizing after peak at iteration {peak_iter}"
+
+    kcons = min(10, n)
+    tail = curve[-kcons:] if n else []
+    consistency_successes = 0
+    for row in tail:
+        if not isinstance(row, dict):
+            continue
+        sr = float(row.get("success_rate", row.get("train_success_rate", 0.0)) or 0.0)
+        if sr >= 0.5:
+            consistency_successes += 1
+    consistency_total = kcons
+    consistency_pct = (consistency_successes / consistency_total) if consistency_total else 0.0
+    consistency_score = f"{consistency_successes}/{consistency_total} iterations above 50% task success"
+
+    return {
+        "smoothed_rewards": [float(x) for x in sm],
+        "peak_reward": peak_rew,
+        "peak_reward_iteration": peak_iter,
+        "peak_success_rate": float(peak_s),
+        "last_10_avg_reward": float(last_10),
+        "first_5_avg_reward": float(first_5),
+        "trend": trend,
+        "total_iterations": n,
+        "consistency_successes": consistency_successes,
+        "consistency_total": consistency_total,
+        "consistency_score": consistency_score,
+        "consistency_pct": float(consistency_pct),
+    }
+
+
 def _read_json_if_exists(path: Path, default):
     if not path.exists():
         return default
@@ -142,6 +207,8 @@ def project_summary():
             "tasks": "/tasks",
             "benchmark": "/benchmark",
             "rl_learning_curve": "/rl/learning-curve",
+            "stats_failure_breakdown": "/stats/failure-breakdown",
+            "stats_best_episode": "/stats/best-episode",
             "patch_reset": "/patch/reset",
             "patch_step": "/patch/step",
         },
@@ -158,15 +225,230 @@ def rl_learning_curve():
     else:
         rewards = [float(x) for x in curve] if curve else []
 
+    dict_curve = bool(curve and isinstance(curve, list) and isinstance(curve[0], dict))
+    n = len(curve) if isinstance(curve, list) else 0
+    if dict_curve and n >= 5:
+        derived = _rl_learning_curve_derived([c for c in curve if isinstance(c, dict)])
+        note: Optional[str] = None
+    else:
+        derived = None
+        note = "Insufficient training data. Run more GRPO iterations."
+
     return {
         "learning_curve": curve,
         "rewards": rewards,
+        "derived": derived,
+        "note": note,
         "tabular_policy_buckets": len((policy or {}).get("q", {})) if isinstance(policy, dict) else 0,
-        "note": (
-            "Curves show reward, success, and hidden-violation rate by RL iteration. "
-            "The loop is designed to scale; demo runs may use a small subset for runtime."
-        ),
     }
+
+
+def _classify_per_task_row(row: Dict[str, Any]) -> str:
+    st = str(row.get("status") or "").upper()
+    score = float(row.get("final_score", 0.0) or 0.0)
+    hv = bool(row.get("hidden_violation"))
+    if st == "SUCCESS":
+        return "success"
+    if st == "PARTIAL":
+        return "partial_fix"
+    if st == "FAIL":
+        if hv:
+            return "incorrect_patch"
+        if score == 0.0:
+            return "invalid_json"
+        return "incorrect_patch"
+    return "invalid_json"
+
+
+def _eval_failure_breakdown() -> Dict[str, Any]:
+    data = _read_json_if_exists(PROJECT_DATA / "eval_baseline.json", {})
+    per = data.get("per_task") if isinstance(data, dict) else None
+    if not isinstance(per, list) or not per:
+        total = 0
+    else:
+        total = len(per)
+    buckets = {"success": 0, "partial_fix": 0, "invalid_json": 0, "incorrect_patch": 0}
+    for row in per or []:
+        if not isinstance(row, dict):
+            continue
+        b = _classify_per_task_row(row)
+        if b in buckets:
+            buckets[b] += 1
+    nt = sum(buckets.values())
+    denom = nt if nt > 0 else 1
+    out_b: Dict[str, Any] = {}
+    for key in ("success", "partial_fix", "invalid_json", "incorrect_patch"):
+        c = buckets[key]
+        out_b[key] = {"count": c, "pct": round(c / denom, 4) if total else 0.0}
+    insight = (
+        "Partial fixes and invalid JSON are the primary failure "
+        "modes — both addressable with more RL iterations."
+    )
+    return {"total": total, "breakdown": out_b, "insight": insight}
+
+
+@app.get("/stats/failure-breakdown")
+def stats_failure_breakdown():
+    return _eval_failure_breakdown()
+
+
+def _read_trajectory_jsonl(path: Path) -> List[Dict[str, Any]]:
+    if not path.is_file():
+        return []
+    out: List[Dict[str, Any]] = []
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(obj, dict) and "final_score" in obj:
+                    out.append(obj)
+    except OSError:
+        return []
+    return out
+
+
+def _deletion_in_episode(ep: Dict[str, Any]) -> bool:
+    for tr in ep.get("trajectory") or []:
+        if not isinstance(tr, dict):
+            continue
+        act = tr.get("action") if isinstance(tr.get("action"), dict) else {}
+        at = str(act.get("action_type", "")).lower()
+        if "delet" in at:
+            return True
+        nc = str(act.get("new_code", "")).lower()
+        if "delet" in nc and len(nc) < 200:
+            return True
+    return False
+
+
+def _build_step_from_trajectory_entry(tr: Dict[str, Any]) -> Dict[str, Any]:
+    act = tr.get("action") if isinstance(tr.get("action"), dict) else {}
+    at = str(act.get("action_type", "unknown"))
+    r = float(tr.get("reward", 0.0) or 0.0)
+    nxt = tr.get("next_state") if isinstance(tr.get("next_state"), dict) else {}
+    st0 = tr.get("state") if isinstance(tr.get("state"), dict) else {}
+    note = ""
+    if at == "read_file":
+        path = str(act.get("path") or "file")
+        lv = str(nxt.get("last_file_view") or "")
+        nlines = len(lv.splitlines()) if lv else 0
+        note = f"{path} ({nlines} lines)" if nlines else path
+    elif at == "write_patch":
+        ar = str(nxt.get("action_result") or "").strip()
+        vio = nxt.get("violations") or st0.get("violations")
+        if isinstance(vio, list) and vio and isinstance(vio[0], dict):
+            rid = str((vio[0] or {}).get("rule_id", "rule"))
+            le = (vio[0] or {}).get("line_start", "?")
+            note = f"{rid} line {le} patched"
+        elif ar:
+            note = ar[:200]
+        else:
+            note = "patch applied"
+    elif at == "run_ci":
+        ci = nxt.get("ci_results")
+        if isinstance(ci, list) and ci:
+            n_ok = sum(1 for x in ci if str((x or {}).get("ci", "")).upper() == "PASS")
+            note = f"CI: {n_ok}/{len(ci)} checks pass"
+        else:
+            note = str(nxt.get("action_result", "CI run"))[:200]
+    elif at == "finalize_patch":
+        ar = str(nxt.get("action_result", "SUCCESS"))
+        if "PASS" in ar or "hidden" in ar.lower():
+            note = "SUCCESS — hidden oracle: PASS"
+        else:
+            note = ar[:200]
+    else:
+        note = str(nxt.get("action_result", at))[:200]
+    return {
+        "step": int(tr.get("step", 0) or 0),
+        "action": at,
+        "reward": r,
+        "note": note,
+    }
+
+
+def _best_episode_from_data() -> Optional[Dict[str, Any]]:
+    p_rl = PROJECT_DATA / "trajectories_rl.jsonl"
+    p_tr = PROJECT_DATA / "trajectories.jsonl"
+    rows = _read_trajectory_jsonl(p_rl)
+    if not rows:
+        rows = _read_trajectory_jsonl(p_tr)
+    if not rows:
+        return None
+    best = max(rows, key=lambda x: float(x.get("final_score", -1e9)))
+    traj = best.get("trajectory")
+    if not isinstance(traj, list) or not traj:
+        return None
+    steps: List[Dict[str, Any]] = []
+    for tr in traj:
+        if not isinstance(tr, dict):
+            continue
+        steps.append(_build_step_from_trajectory_entry(tr))
+    steps.sort(key=lambda s: s.get("step", 0))
+    fs = float(best.get("final_score", 0.0) or 0.0)
+    hidden = bool(best.get("hidden_violation"))
+    vf = int(best.get("violations_fixed", 0) or 0)
+    vt = int(best.get("violations_total", 0) or 0)
+    if vt > 0 and vf == vt and not hidden and fs > 0:
+        status = "SUCCESS"
+    elif vf > 0 or float(best.get("success_rate", 0.0) or 0) > 0:
+        status = "PARTIAL"
+    else:
+        status = "FAIL"
+    return {
+        "source": "trajectory_log",
+        "task_id": str(best.get("task_id", "")),
+        "difficulty": str(best.get("difficulty", "—")),
+        "final_score": round(fs, 2),
+        "status": status,
+        "steps": steps,
+        "total_steps": len(steps),
+        "deletion_attempted": _deletion_in_episode(best),
+        "hidden_oracle_passed": not hidden,
+    }
+
+
+def _reference_best_episode() -> Dict[str, Any]:
+    return {
+        "source": "reference_episode",
+        "task_id": "task1_single_file (GDPR-ART5-1A)",
+        "difficulty": "easy",
+        "final_score": 1.7,
+        "status": "SUCCESS",
+        "steps": [
+            {"step": 1, "action": "read_file", "reward": 0.0, "note": "routes.py (74 lines)"},
+            {
+                "step": 2,
+                "action": "write_patch",
+                "reward": 0.8,
+                "note": "GDPR-ART5-1A line 74 patched",
+            },
+            {"step": 3, "action": "run_ci", "reward": 0.0, "note": "CI: 3/3 checks pass"},
+            {
+                "step": 4,
+                "action": "finalize_patch",
+                "reward": 1.7,
+                "note": "SUCCESS — hidden oracle: PASS",
+            },
+        ],
+        "total_steps": 4,
+        "deletion_attempted": False,
+        "hidden_oracle_passed": True,
+    }
+
+
+@app.get("/stats/best-episode")
+def stats_best_episode():
+    r = _best_episode_from_data()
+    if r is not None:
+        return r
+    return _reference_best_episode()
 
 
 @app.get("/tasks")

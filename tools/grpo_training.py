@@ -147,14 +147,42 @@ def train():
     align_causal_lm_and_tokenizer(model, tokenizer, max_new_tokens=GENERATION_MAX_NEW_TOKENS)
     FastLanguageModel.for_training(model)
 
-    reward_history = []
+    # Presentation-only: per-trainer-step aggregates (does not change learning).
+    reward_history: list[float] = []
+    step_avg_rewards: list[float] = []
+    total_generations = 0
+    json_valid_count = 0
+    best_batch: dict = {"success_num": 0, "success_den": 0, "avg": -1e9, "step": -1}
+    best_reward_ever: dict = {"value": -1e9, "step": -1}
+    grpo_step = [0]  # mutable counter for logging
+
+    def _completion_has_valid_action_json(comp: str) -> bool:
+        for match in re.finditer(r"\{[^{}]*\"action_type\"[^{}]*\}", comp, flags=re.DOTALL):
+            try:
+                action = json.loads(match.group(0))
+            except json.JSONDecodeError:
+                continue
+            if isinstance(action, dict) and action.get("action_type"):
+                return True
+        return False
 
     def reward_fn(completions, **kwargs) -> List[float]:
         """Reward function called by GRPOTrainer."""
-        rewards = []
+        nonlocal total_generations, json_valid_count, best_batch, best_reward_ever
+        grpo_step[0] += 1
+        step_n = grpo_step[0]
+        rewards: List[float] = []
         task_ids = kwargs.get("task_id") or kwargs.get("task_ids") or ["task1_single_file"] * len(completions)
         if isinstance(task_ids, str):
             task_ids = [task_ids] * len(completions)
+
+        ngen = len(completions)
+        jok = 0
+        for comp in completions:
+            total_generations += 1
+            if _completion_has_valid_action_json(comp):
+                jok += 1
+                json_valid_count += 1
 
         for i, comp in enumerate(completions):
             task_id = task_ids[i] if i < len(task_ids) else "task1_single_file"
@@ -185,7 +213,7 @@ def train():
             final_score = 0.0
             try:
                 done = False
-                info = {}
+                info: dict = {}
                 for action in actions[:12]:
                     obs, reward, done, info = env.step(action)
                     final_score = float(info.get("final_score", reward))
@@ -193,15 +221,27 @@ def train():
                         break
 
                 if not done:
-                    obs, reward, done, info = env.step({"action_type": "finalize_patch"})
+                    _obs, reward, done, info = env.step({"action_type": "finalize_patch"})
                     final_score = float(info.get("final_score", 0.0))
 
                 rewards.append(final_score)
             except Exception:
                 rewards.append(0.0)
         reward_history.extend(rewards)
-        avg = sum(rewards) / len(rewards)
-        print(f"  Batch reward avg: {avg:.4f} | history avg: {sum(reward_history)/len(reward_history):.4f}")
+        avg = sum(rewards) / max(1, len(rewards))
+        step_avg_rewards.append(avg)
+        n_ok = sum(1 for r in rewards if r > 0.0)
+        if n_ok > best_batch["success_num"] or (
+            n_ok == best_batch["success_num"] and avg > best_batch["avg"]
+        ):
+            best_batch = {"success_num": n_ok, "success_den": len(rewards), "avg": avg, "step": step_n}
+        if avg > best_reward_ever["value"]:
+            best_reward_ever = {"value": avg, "step": step_n}
+        jrate = 100.0 * jok / max(1, ngen)
+        print("------------------------------------------------------------\n## GRPO BATCH (trainer step %d)\n------------------------------------------------------------" % step_n)
+        print("  json=%d/%d  |  JSON validity (batch): %.1f%%" % (jok, ngen, jrate))
+        print("  success=%d/%d (reward>0)  |  batch_avg_reward=%+.3f" % (n_ok, len(rewards), avg))
+        print("  → Model improves over time; watch batch_avg_reward trend, not a single step.")
         return rewards
 
     # Build training prompts from rollouts
@@ -248,16 +288,34 @@ def train():
         tokenizer=tokenizer,
     )
 
+    print("------------------------------------------------------------\n## STARTING GRPO\n------------------------------------------------------------")
+    print("  max_steps=%d  |  tasks=%s" % (MAX_STEPS, ", ".join(TASKS)))
+    print("  Training uses multi-file scenarios: task2_django_app, task1_single_file (see TASKS in script).")
+    print(f"  → Agent learns structured actions from env reward; json= line tracks parse reliability.")
     print(f"Starting GRPO training for {MAX_STEPS} steps...")
     trainer.train()
 
-    # Save reward curve data
-    import json
-    with open("reward_curve.json", "w") as f:
-        json.dump(reward_history, f)
-    print(f"Reward history saved. Final avg: {sum(reward_history)/len(reward_history):.4f}")
+    with open("reward_curve.json", "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "per_completion_rewards": reward_history,
+                "per_step_avg_reward": step_avg_rewards,
+                "json_valid_count": json_valid_count,
+                "total_generations": max(1, total_generations),
+            },
+            f,
+            indent=2,
+        )
+    last10 = sum(step_avg_rewards[-10:]) / min(10, len(step_avg_rewards)) if step_avg_rewards else 0.0
+    jtot = max(1, total_generations)
+    print("------------------------------------------------------------\n## BEST PERFORMANCE\n------------------------------------------------------------")
+    print("  Success: %d/%d  (most successes in a batch during training)" % (best_batch["success_num"], best_batch["success_den"] or 1))
+    print("  Reward : %+.3f  (highest batch average during training)\n" % best_reward_ever["value"])
+    print("  Final performance (last 10 steps avg): %+.3f" % last10)
+    print("  JSON validity rate: %.1f%%  (%d/%d)" % (100.0 * json_valid_count / jtot, json_valid_count, jtot))
+    print("  → Outputs are reliable when JSON validity is high; compare batch_avg to baseline eval.")
+    print("Reward curve saved: reward_curve.json  |  per-step avg points: %d" % len(step_avg_rewards))
 
-    # Save model
     model.save_pretrained("patch_agent_model")
     tokenizer.save_pretrained("patch_agent_model")
     print("Model saved to patch_agent_model/")

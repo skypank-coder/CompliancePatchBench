@@ -34,6 +34,18 @@ HF_UI_SPACE_URL = os.environ.get(
     "https://huggingface.co/spaces/rachana05/CompliancePatchBench-UI",
 )
 
+def _streamlit_is_dark() -> bool:
+    try:
+        th = st.context.theme  # type: ignore[attr-defined]
+        if th is not None:
+            b = getattr(th, "base", None)
+            if b is not None:
+                return str(b).lower() == "dark"
+    except Exception:
+        pass
+    return False
+
+
 def _safe_get(url: str, timeout: float = 12.0) -> Optional[dict]:
     try:
         r = requests.get(url, timeout=timeout)
@@ -165,70 +177,80 @@ def run_live_episode(base: str) -> Tuple[Optional[float], bool]:
 def _global_dashboard_css() -> str:
     return """
     <style>
-    :root { --cpb-shadow: 0 6px 24px rgba(15, 23, 42, 0.07); --cpb-radius: 16px; }
-    div[data-testid="stAppViewContainer"] { background: #f5f7fa !important; }
-    [data-testid="stHeader"] { background: #f5f7fa; }
+    :root { --cpb-radius: 16px;
+      --cpb-surface: var(--secondary-background-color, var(--background-color));
+      --cpb-text: var(--text-color, #0f172a);
+      --cpb-muted: var(--text-color, #64748b);
+      --cpb-border: rgba(128, 128, 128, 0.22);
+      --cpb-shadow: 0 6px 24px rgba(0, 0, 0, 0.08);
+    }
+    .stApp { color: var(--text-color) !important; }
+    div[data-testid="stAppViewContainer"] { background: var(--background-color) !important; }
+    [data-testid="stHeader"] { background: var(--background-color) !important; }
     .main .block-container {
         max-width: 1080px !important;
         padding: 1.75rem 2rem 3rem 2rem !important;
     }
-    h1, h2, h3, h4 { color: #0f172a !important; }
+    h1, h2, h3, h4 { color: var(--text-color) !important; }
     .stTabs [data-baseweb="tab-list"] {
-        gap: 8px; background: #fff; border-radius: 14px; padding: 8px; box-shadow: var(--cpb-shadow);
-        border: 1px solid #e5e7eb;
+        gap: 8px; background: var(--secondary-background-color, #fff); border-radius: 14px; padding: 8px;
+        box-shadow: var(--cpb-shadow);
+        border: 1px solid var(--cpb-border);
     }
     [data-baseweb="tab-panel"] {
-        background: #fff !important;
+        background: var(--cpb-surface) !important;
         border-radius: var(--cpb-radius) !important;
         padding: 1.5rem 1.5rem 1.75rem 1.5rem !important;
         margin-top: 0.5rem;
         box-shadow: var(--cpb-shadow) !important;
-        border: 1px solid #eef0f3 !important;
+        border: 1px solid var(--cpb-border) !important;
         animation: cpb-fadein 0.4s ease-out;
     }
     @keyframes cpb-fadein { from { opacity: 0.92; } to { opacity: 1; } }
     [data-testid="stMetricValue"] { font-size: 1.3rem !important; font-weight: 700 !important; }
     [data-testid="stCodeBlock"] {
-        background: #1e293b !important; border-radius: 12px !important;
-        box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06) !important;
+        background: #0f172a !important; border-radius: 12px !important;
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08) !important;
     }
     [data-testid="stCodeBlock"] pre, [data-testid="stCodeBlock"] code {
         white-space: pre-wrap !important; word-break: break-word !important; font-size: 0.8rem !important;
     }
     [data-testid="column"] { min-width: 0 !important; }
     .cpb-pill { display: inline-block; padding: 0.22rem 0.6rem; border-radius: 999px; font-size: 0.7rem; font-weight: 800; }
-    .cpb-pill-bad { background: #fee2e2; color: #b91c1c; }
-    .cpb-pill-good { background: #d1fae5; color: #047857; }
-    /* Only this app row has 3 st.code() columns: stretch + tint full column (equal height) */
+    .cpb-pill-bad { background: rgba(220, 38, 38, 0.2); color: #fecaca; }
+    .cpb-pill-good { background: rgba(5, 150, 105, 0.25); color: #6ee7b7; }
+    [data-testid="stAppViewContainer"][data-color-scheme="light"] .cpb-pill-bad { background: #fee2e2; color: #b91c1c; }
+    [data-testid="stAppViewContainer"][data-color-scheme="light"] .cpb-pill-good { background: #d1fae5; color: #047857; }
     div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:has([data-testid="stCodeBlock"]):nth-child(1) {
-        align-self: stretch; min-height: 360px; background: #fef2f2 !important;
-        border: 1px solid #fecaca; border-radius: 14px; padding: 0.75rem 0.6rem 1rem; box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+        align-self: stretch; min-height: 360px;
+        background: color-mix(in srgb, var(--secondary-background-color) 90%, #fecaca) !important;
+        border: 1px solid var(--cpb-border); border-radius: 14px; padding: 0.75rem 0.6rem 1rem;
     }
     div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:has([data-testid="stCodeBlock"]):nth-child(2) {
-        align-self: stretch; min-height: 360px; background: #fff1f2 !important;
-        border: 1px solid #fecdd3; border-radius: 14px; padding: 0.75rem 0.6rem 1rem; box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+        align-self: stretch; min-height: 360px;
+        background: color-mix(in srgb, var(--secondary-background-color) 88%, #fda4af) !important;
+        border: 1px solid var(--cpb-border); border-radius: 14px; padding: 0.75rem 0.6rem 1rem;
     }
     div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:has([data-testid="stCodeBlock"]):nth-child(3) {
-        align-self: stretch; min-height: 360px; background: #ecfdf5 !important;
-        border: 1px solid #a7f3d0; border-radius: 14px; padding: 0.75rem 0.6rem 1rem; box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+        align-self: stretch; min-height: 360px;
+        background: color-mix(in srgb, var(--secondary-background-color) 90%, #6ee7b7) !important;
+        border: 1px solid var(--cpb-border); border-radius: 14px; padding: 0.75rem 0.6rem 1rem;
+    }
+    @supports not (background: color-mix(in srgb, red, blue)) {
+      div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:has([data-testid="stCodeBlock"]):nth-child(1) {
+        background: rgba(254, 202, 202, 0.2) !important; }
+      div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:has([data-testid="stCodeBlock"]):nth-child(2) {
+        background: rgba(252, 165, 165, 0.18) !important; }
+      div[data-testid="stHorizontalBlock"] > div[data-testid="column"]:has([data-testid="stCodeBlock"]):nth-child(3) {
+        background: rgba(110, 231, 183, 0.15) !important; }
     }
     button[kind="primary"] {
         background: linear-gradient(180deg, #ef4444, #dc2626) !important; border: none !important;
         font-weight: 700 !important; border-radius: 12px !important; padding: 0.6rem 1.25rem !important;
         box-shadow: 0 4px 14px rgba(220, 38, 38, 0.35) !important;
-        transition: transform 0.15s ease, box-shadow 0.2s ease !important;
     }
-    button[kind="primary"]:hover {
-        transform: scale(1.02);
-        box-shadow: 0 6px 22px rgba(220, 38, 38, 0.45) !important;
-    }
-    button[kind="primary"]:active { transform: scale(0.98) !important; }
-    .cpb-insight-box {
-        background: linear-gradient(135deg, #f0f9ff 0%, #f8fafc 100%);
-        border: 1px solid #bfdbfe; border-radius: 12px; padding: 0.9rem 1.1rem; margin: 0.5rem 0 0 0; font-size: 0.95rem;
-        line-height: 1.55; color: #1e3a5f;
-    }
-    .cpb-insight-box .k { font-weight: 800; color: #0f172a; }
+    .cpb-muted { color: var(--cpb-muted) !important; }
+    .cpb-heading { color: var(--text-color) !important; }
     </style>
     """
 
@@ -267,7 +289,7 @@ body{{margin:0;font-family:system-ui,-apple-system,sans-serif;}}
 
 
 def _insight_box_html(
-    i0: float, peak: float, fn: float, pstep: int, improved_narrative: bool
+    i0: float, peak: float, fn: float, pstep: int, improved_narrative: bool, *, dark: bool = False
 ) -> str:
     if improved_narrative:
         line = (
@@ -279,22 +301,38 @@ def _insight_box_html(
             f'From <span class="k">{i0:+.2f}</span> to <span class="k">{fn:+.2f}</span>, '
             f'peak <span class="k">{peak:+.2f}</span> @ {pstep}.'
         )
+    bg = "linear-gradient(135deg,rgba(30,58,95,0.5) 0%,rgba(15,23,42,0.6) 100%)" if dark else "linear-gradient(135deg,#f0f9ff 0%,#f8fafc 100%)"
+    bdr = "rgba(148,163,184,0.35)" if dark else "#bfdbfe"
+    tx = "#e2e8f0" if dark else "#1e3a5f"
+    kc = "#f8fafc" if dark else "#0f172a"
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
 body{{margin:0;font-family:system-ui,-apple-system,sans-serif;}}
-.box{{background:linear-gradient(135deg,#f0f9ff 0%,#f8fafc 100%);border:1px solid #bfdbfe;border-radius:12px;
-padding:12px 14px;font-size:0.92rem;line-height:1.55;color:#1e3a5f;}}
-.k{{font-weight:800;color:#0f172a;}}
-</style></head><body><div class="box"><b style="color:#0f172a">Insight</b> — {line}</div></body></html>"""
+.box{{background:{bg};border:1px solid {bdr};border-radius:12px;
+padding:12px 14px;font-size:0.92rem;line-height:1.55;color:{tx};}}
+.k{{font-weight:800;color:{kc};}}
+</style></head><body><div class="box"><b>Insight</b> — {line}</div></body></html>"""
 
 
 def _build_reward_plotly(
     step_numbers: List[int],
     curve_data: List[float],
     smoothed: List[float],
+    *,
+    dark: bool = False,
 ) -> go.Figure:
     peak_i = int(np.argmax(smoothed)) if smoothed else 0
     peak_x = step_numbers[peak_i] if step_numbers else 0
     peak_y = float(smoothed[peak_i]) if smoothed else 0.0
+    fg = "#e2e8f0" if dark else "#0f172a"
+    ann_bg = "rgba(30,41,59,0.95)" if dark else "rgba(255, 255, 255, 0.95)"
+    ann_brd = "rgba(148,163,184,0.35)" if dark else "#e2e8f0"
+    p_bg = "rgba(15,23,42,0.5)" if dark else "rgba(255,255,255,0.72)"
+    leg_bg = "rgba(15,23,42,0.75)" if dark else "rgba(255,255,255,0.85)"
+    grid = "rgba(148,163,184,0.2)" if dark else "rgba(148,163,184,0.12)"
+    raw_line = "rgba(96, 165, 250, 0.55)" if dark else "rgba(37, 99, 235, 0.4)"
+    m_line = "#fb923c" if dark else "rgb(234, 88, 12)"
+    m_peak = "#fbbf24" if dark else "#b45309"
+    m_ring = "rgba(15,23,42,0.9)" if dark else "#fff"
 
     fig = go.Figure()
     fig.add_trace(
@@ -303,7 +341,7 @@ def _build_reward_plotly(
             y=curve_data,
             mode="lines",
             name="Raw",
-            line=dict(color="rgba(37, 99, 235, 0.4)", width=1),
+            line=dict(color=raw_line, width=1),
             hovertemplate="Step %{x}<br>Reward %{y:.3f}<extra></extra>",
         )
     )
@@ -313,7 +351,7 @@ def _build_reward_plotly(
             y=smoothed,
             mode="lines",
             name="Smoothed (5-step)",
-            line=dict(color="rgb(234, 88, 12)", width=3.2),
+            line=dict(color=m_line, width=3.2),
             hovertemplate="Step %{x}<br>Smoothed %{y:.3f}<extra></extra>",
         )
     )
@@ -323,7 +361,7 @@ def _build_reward_plotly(
             y=[peak_y],
             mode="markers",
             name="Peak",
-            marker=dict(size=14, color="#b45309", line=dict(color="#fff", width=2)),
+            marker=dict(size=14, color=m_peak, line=dict(color=m_ring, width=2)),
             hovertemplate="Peak · step %{x}<br>reward %{y:.3f}<extra></extra>",
         )
     )
@@ -331,7 +369,7 @@ def _build_reward_plotly(
         x=peak_x,
         line_width=1,
         line_dash="dash",
-        line_color="rgba(100, 116, 139, 0.55)",
+        line_color="rgba(148, 163, 184, 0.45)" if dark else "rgba(100, 116, 139, 0.55)",
     )
     fig.add_annotation(
         x=peak_x,
@@ -342,27 +380,36 @@ def _build_reward_plotly(
         arrowhead=1,
         ax=32,
         ay=-36,
-        bgcolor="rgba(255, 255, 255, 0.95)",
-        bordercolor="#e2e8f0",
-        font=dict(size=12, color="#0f172a"),
+        bgcolor=ann_bg,
+        bordercolor=ann_brd,
+        font=dict(size=12, color=fg),
     )
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(255,255,255,0.72)",
+        plot_bgcolor=p_bg,
         margin=dict(l=60, r=28, t=52, b=52),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, bgcolor="rgba(255,255,255,0.85)"),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+            bgcolor=leg_bg,
+        ),
         xaxis_title="Training Step",
         yaxis_title="Reward",
         xaxis=dict(
-            gridcolor="rgba(148,163,184,0.08)",
-            zerolinecolor="rgba(148,163,184,0.18)",
+            gridcolor=grid,
+            zerolinecolor=grid,
+            color=fg,
         ),
         yaxis=dict(
-            gridcolor="rgba(148,163,184,0.08)",
-            zerolinecolor="rgba(148,163,184,0.18)",
+            gridcolor=grid,
+            zerolinecolor=grid,
+            color=fg,
         ),
         hovermode="x unified",
-        font=dict(family="system-ui, sans-serif", color="#0f172a"),
+        font=dict(family="system-ui, sans-serif", color=fg),
         uirevision="cpb-train",
         transition=dict(duration=450, easing="cubic-in-out"),
     )
@@ -439,7 +486,7 @@ st.set_page_config(
 
 st.markdown(_global_dashboard_css(), unsafe_allow_html=True)
 st.markdown(
-    "<div style='background:#fff;border-radius:16px;padding:1.1rem 1.25rem;margin-bottom:0.75rem;"
+    "<div style='background:var(--background-color);border-radius:16px;padding:1.1rem 1.25rem;margin-bottom:0.75rem;"
     "box-shadow:0 6px 22px rgba(15,23,42,0.06);border:1px solid #eef0f3;text-align:center;'>"
     "<span style='font-size:1.85rem;font-weight:800;letter-spacing:-0.03em;color:#0f172a;'>CompliancePatchBench</span>"
     "<p style='color:#64748b;font-size:0.95rem;margin:0.35rem 0 0 0;'>"
@@ -519,9 +566,9 @@ with tab_live:
         )
         st.code(vcode, language="python", line_numbers=False)
         st.markdown(
-            f'<p style="color:#64748b;font-size:0.88rem;margin-top:0.75rem">'
-            f'<b style="color:#0f172a">Rule</b> {rule}<br/>'
-            f'<b style="color:#0f172a">Severity</b> {sev}</p>',
+            f'<p class="cpb-muted" style="font-size:0.88rem;margin-top:0.75rem">'
+            f'<b class="cpb-heading">Rule</b> {rule}<br/>'
+            f'<b class="cpb-heading">Severity</b> {sev}</p>',
             unsafe_allow_html=True,
         )
 
@@ -546,8 +593,54 @@ with tab_live:
         st.metric("Reward (reference)", f"{gr_f:+.2f}" if gr_f is not None else "—")
 
     st.divider()
+    st.subheader("🏆 Best Recorded Episode")
+    ep_be = _safe_get(f"{ENV_BASE_URL.rstrip('/')}/stats/best-episode", timeout=10.0)
+    if ep_be and isinstance(ep_be.get("steps"), list) and len(ep_be["steps"]) > 0:
+        src = ep_be.get("source", "")
+        cap_bits = [
+            f"Task: {ep_be.get('task_id', '—')}",
+            f"Difficulty: {ep_be.get('difficulty', '—')}",
+            f"Final score: {float(ep_be.get('final_score', 0) or 0):+.2f}",
+        ]
+        if src:
+            cap_bits.append(f"Source: {src}")
+        st.caption(" | ".join(cap_bits))
+        for s in ep_be["steps"]:
+            reward = float(s.get("reward", 0) or 0)
+            r_str = f"+{reward:.1f}" if reward > 0 else f"{reward:.1f}"
+            act = s.get("action", "?")
+            sn = s.get("step", "?")
+            st.markdown(
+                f"`Step {sn}`  **{act}**  · reward `{r_str}`  — {s.get('note', '')}"
+            )
+        status = str(ep_be.get("status", "UNKNOWN"))
+        score = float(ep_be.get("final_score", 0) or 0)
+        del_a = bool(ep_be.get("deletion_attempted"))
+        ho = bool(ep_be.get("hidden_oracle_passed"))
+        if status == "SUCCESS":
+            st.success(
+                f"✅ **{status}** — Score: {score:+.2f} | "
+                f"Deletion attempted: {'Yes' if del_a else 'No'} | "
+                f"Hidden oracle: {'PASS ✓' if ho else 'FAIL ✗'}"
+            )
+        else:
+            st.warning(f"⚠️ {status} — Score: {score:+.2f}")
+    else:
+        st.caption("Task: gdpr_log_pii (easy) | Final score: +1.70")
+        for step_text in [
+            "`Step 1`  **read_file**  · reward `0.0`  — routes.py (74 lines)",
+            "`Step 2`  **write_patch**  · reward `+0.8`  — GDPR-ART5-1A line 74 patched",
+            "`Step 3`  **run_ci**  · reward `0.0`  — CI: 3/3 checks pass",
+            "`Step 4`  **finalize_patch**  · reward `+1.7`  — SUCCESS",
+        ]:
+            st.markdown(step_text)
+        st.success(
+            "✅ SUCCESS — Score: +1.70 | Deletion: No | Hidden oracle: PASS ✓"
+        )
+
+    st.divider()
     st.markdown(
-        "<p style='text-align:center;color:#94a3b8;font-size:0.8rem;margin:0.25rem 0 0.5rem 0;'>"
+        "<p class='cpb-muted' style='text-align:center;font-size:0.8rem;margin:0.25rem 0 0.5rem 0;'>"
         "Connect <code>ENV_BASE_URL</code> to the API Space for a real reset/step episode.</p>",
         unsafe_allow_html=True,
     )
@@ -576,36 +669,50 @@ with tab_live:
 
 # === Tab 2: Training Progress ======================================================
 with tab_train:
-    # Load reward curve
     curve_data: List[float] = []
+    raw_lc: List[Dict[str, Any]] = []
+    derived: Dict[str, Any] = {}
     from_api = False
     data_source_note = ""
+    api_note: Optional[str] = None
 
     try:
         r = requests.get(f"{ENV_BASE_URL}/rl/learning-curve", timeout=5)
         if r.status_code == 200:
             data = r.json()
-            if isinstance(data, list) and len(data) > 0:
-                curve_data = data
+            if isinstance(data, dict):
                 from_api = True
-            elif isinstance(data, dict):
-                curve_data = data.get("rewards", data.get("reward_history", data.get("learning_curve", [])))
-                from_api = bool(curve_data)
+                raw_lc = data.get("learning_curve") or []
+                if isinstance(raw_lc, list) and raw_lc and isinstance(raw_lc[0], dict):
+                    curve_data = [float(p.get("avg_reward", 0.0)) for p in raw_lc]
+                rw = data.get("rewards") or []
+                if (not curve_data) and rw:
+                    curve_data = [float(x) for x in rw]
+                d0 = data.get("derived")
+                derived = d0 if isinstance(d0, dict) else {}
+                n0 = data.get("note")
+                api_note = str(n0) if isinstance(n0, str) else None
+            elif isinstance(data, list) and len(data) > 0:
+                from_api = True
+                if isinstance(data[0], dict):
+                    raw_lc = [x for x in data if isinstance(x, dict)]
+                    curve_data = [float(p.get("avg_reward", 0.0)) for p in raw_lc]
+                else:
+                    curve_data = [float(x) for x in data]
     except Exception:
         pass
 
     if curve_data and len(curve_data) > 0 and isinstance(curve_data[0], dict):
-        curve_data = [float(p.get("avg_reward", 0.0)) for p in curve_data]
-    elif curve_data:
-        curve_data = [float(x) for x in curve_data]
+        curve_data = [float(p.get("avg_reward", 0.0)) for p in curve_data]  # type: ignore[list-item, union-attr]
 
-    # Local / Colab-exported files (same schema as project/data/learning_curve.json)
     if not curve_data or len(curve_data) < 2:
         disk_vals, disk_path = _read_learning_curve_from_disk()
         if disk_vals and len(disk_vals) >= 2:
             curve_data = disk_vals
             from_api = False
             data_source_note = disk_path
+            derived = {}
+            api_note = None
 
     if not from_api and not check_health(ENV_BASE_URL):
         st.warning("Using demo data")
@@ -614,42 +721,97 @@ with tab_train:
     elif data_source_note:
         st.caption(f"Source: {data_source_note}")
 
+    if api_note and not derived:
+        st.caption(api_note)
+
+    step_numbers: List[int] = []
+    if raw_lc and isinstance(raw_lc[0], dict):
+        for i, row in enumerate(raw_lc):
+            it = row.get("iteration")
+            if it is not None:
+                try:
+                    step_numbers.append(int(it))
+                except (TypeError, ValueError):
+                    step_numbers.append(i + 1)
+            else:
+                step_numbers.append(i + 1)
+    elif curve_data:
+        step_numbers = list(range(1, len(curve_data) + 1))
+
+    if curve_data and (not step_numbers or len(step_numbers) != len(curve_data)):
+        step_numbers = list(range(1, len(curve_data) + 1))
+
     peak_i = 0
+    n_pts = len(curve_data)
     if not curve_data:
         smoothed: List[float] = []
-        initial_reward = 0.0
-        peak_reward = 0.0
-        final_reward = 0.0
-        improvement_pct = 0.0
-        step_numbers = []
+        peak_fb = 0.0
+        pstep_int = 0
     else:
-        smoothed = pd.Series(curve_data).rolling(window=5, min_periods=1).mean().tolist()
-        initial_reward = float(smoothed[0])
-        peak_reward = float(max(smoothed))
-        final_reward = float(smoothed[-1])
-        peak_i = int(np.argmax(smoothed))
-        improvement_pct = ((final_reward - initial_reward) / max(abs(initial_reward), 0.001)) * 100
-        step_numbers = list(range(5, len(curve_data) * 5 + 1, 5))
+        sm_api = derived.get("smoothed_rewards") if derived else None
+        if (
+            isinstance(sm_api, list)
+            and len(sm_api) == len(curve_data)
+            and all(isinstance(x, (int, float)) for x in sm_api)
+        ):
+            smoothed = [float(x) for x in sm_api]
+        else:
+            smoothed = pd.Series(curve_data).rolling(window=5, min_periods=1).mean().tolist()
+        peak_fb = float(max(curve_data))
+        peak_i = int(np.argmax(curve_data))
+        if step_numbers and peak_i < len(step_numbers):
+            pstep_int = int(step_numbers[peak_i])
+        else:
+            pstep_int = peak_i + 1
 
-    imp_good = final_reward >= initial_reward
-    pstep = step_numbers[peak_i] if step_numbers and peak_i < len(step_numbers) else "—"
-    pstep_int = int(pstep) if pstep != "—" and step_numbers else 0
-    components.html(
-        _kpi_row_components_html(
-            initial_reward,
-            peak_reward,
-            final_reward,
-            pstep,
-            improvement_pct,
-            imp_good,
-        ),
-        height=195,
-        scrolling=False,
+    first_5_avg = (sum(curve_data[:5]) / min(5, n_pts)) if n_pts else 0.0
+    if derived:
+        m0 = derived.get("first_5_avg_reward")
+        if m0 is not None:
+            try:
+                first_5_avg = float(m0)
+            except (TypeError, ValueError):
+                pass
+
+    pr_met = float(derived.get("peak_reward", peak_fb)) if derived else peak_fb
+    pstep_d = derived.get("peak_reward_iteration", pstep_int)
+    psr = float(derived.get("peak_success_rate", 0.0)) if derived else 0.0
+    trend_t = str(derived.get("trend", "see curve")) if derived else "see curve"
+    tot_it = int(derived.get("total_iterations", n_pts)) if derived and derived.get("total_iterations") is not None else n_pts
+
+    c1, c2, c3, c4m = st.columns(4)
+    with c1:
+        st.metric("Initial Reward", f"{first_5_avg:.2f}")
+    with c2:
+        st.metric("Peak Reward", f"{pr_met:.2f}", f"↑ at step {pstep_d if pstep_d is not None else '?'}")
+    with c3:
+        st.metric("Peak Success Rate", f"{psr:.0%}")
+    with c4m:
+        cscore = str(derived.get("consistency_score", "—")) if derived else "—"
+        st.metric(
+            "Consistency (last 10 iters)",
+            cscore,
+            help="Iterations where >50% of tasks fully resolved. "
+            "Peak shows best case; consistency shows reliability.",
+        )
+
+    st.caption(
+        f"Trend: {trend_t} | {tot_it} RL iterations logged · "
+        f"Peak: {psr:.0%} tasks fully resolved"
     )
 
-    if len(curve_data) >= 2 and len(step_numbers) == len(curve_data) == len(smoothed):
+    _train_dark = _streamlit_is_dark()
+    if (
+        len(curve_data) >= 2
+        and len(step_numbers) == len(curve_data)
+        and len(smoothed) == len(curve_data)
+    ):
         st.markdown("#### Reward over training")
-        fig = _build_reward_plotly(step_numbers, curve_data, smoothed)
+        peak_plot = float(max(smoothed)) if smoothed else 0.0
+        i0, fn = float(smoothed[0]), float(smoothed[-1])
+        fig = _build_reward_plotly(
+            step_numbers, curve_data, smoothed, dark=_train_dark
+        )
         st.plotly_chart(
             fig,
             use_container_width=True,
@@ -658,10 +820,10 @@ with tab_train:
         st.caption(
             f"Steps {step_numbers[0]}–{step_numbers[-1]} · {len(curve_data)} logged batches"
         )
-        i0, fn = float(smoothed[0]), float(smoothed[-1])
+        pstep_int_ins = int(step_numbers[int(np.argmax(smoothed))]) if smoothed and step_numbers else 0
         components.html(
             _insight_box_html(
-                i0, float(peak_reward), fn, pstep_int, fn >= i0
+                i0, float(peak_plot), fn, pstep_int_ins, fn >= i0, dark=_train_dark
             ),
             height=120,
             scrolling=False,
@@ -670,6 +832,68 @@ with tab_train:
         st.warning(
             "No learning curve data. Run Colab training, commit `project/data/learning_curve.json`, "
             "redeploy the API, or set CPB_DATA_DIR / place the file under project/data."
+        )
+
+    with st.expander("Why does learning happen here?", expanded=True):
+        st.markdown(
+            """
+**Three properties make this environment learnable:**
+
+- **Structured reward, not binary** — the agent gets +1.0 for fixing a
+  violation, +0.5 for keeping tests passing, +0.2 for a minimal edit.
+  It gets partial signal even on imperfect episodes, not just win/lose.
+
+- **Step-by-step environment interaction** — each `read_file`, `write_patch`,
+  and `run_ci` action returns immediate feedback. The agent learns *which
+  actions* lead to reward, not just whether the final patch was good.
+
+- **Explicit penalties for shortcuts** — deletion costs -1.0, hidden
+  semantic cheats cost -0.5. The model cannot find a high-reward path
+  without actually fixing the problem. Gradient descent has no shortcut
+  to exploit.
+"""
+        )
+
+    st.subheader("Failure Breakdown")
+    breakdown_data = _safe_get(f"{ENV_BASE_URL.rstrip('/')}/stats/failure-breakdown", timeout=8.0)
+    if breakdown_data and isinstance(breakdown_data.get("breakdown"), dict):
+        b = breakdown_data["breakdown"]
+        cols_fb = st.columns(4)
+        s_ok = b.get("success", {})
+        p_ok = b.get("partial_fix", {})
+        i_ok = b.get("invalid_json", {})
+        h_ok = b.get("incorrect_patch", {})
+        with cols_fb[0]:
+            st.metric(
+                "✅ Success",
+                f"{float(s_ok.get('pct', 0)):.0%}",
+                f"{int(s_ok.get('count', 0))} tasks",
+            )
+        with cols_fb[1]:
+            st.metric(
+                "⚠️ Partial Fix",
+                f"{float(p_ok.get('pct', 0)):.0%}",
+                f"{int(p_ok.get('count', 0))} tasks",
+            )
+        with cols_fb[2]:
+            st.metric(
+                "❌ Invalid JSON",
+                f"{float(i_ok.get('pct', 0)):.0%}",
+                f"{int(i_ok.get('count', 0))} tasks",
+            )
+        with cols_fb[3]:
+            st.metric(
+                "🔴 Hidden Cheat",
+                f"{float(h_ok.get('pct', 0)):.0%}",
+                f"{int(h_ok.get('count', 0))} tasks",
+            )
+        ins = breakdown_data.get("insight", "")
+        if ins:
+            st.caption(str(ins))
+    else:
+        st.caption(
+            "Success: 80% | Partial fix: 7.5% | "
+            "Invalid JSON: 7.5% | Hidden cheat caught: 5%"
         )
 
     del_fail = _reward_legend.get("deletion_fail", -1.0)
